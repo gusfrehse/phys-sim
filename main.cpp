@@ -8,6 +8,7 @@
 #include <optional>
 
 #include <vulkan/vulkan.hpp>
+#include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
@@ -40,6 +41,31 @@ struct window_and_vulkan_state {
   std::optional<uint32_t> queue_family_index = std::nullopt;
 
   vk::Queue queue;
+
+  auto create_swapchain() -> auto{
+    auto surface_capabilities = physical_device.getSurfaceCapabilitiesKHR(surface);
+    auto surface_formats = physical_device.getSurfaceFormatsKHR(surface);
+    auto surface_present_modes = physical_device.getSurfacePresentModesKHR(surface);
+
+    // choose format, try to find SRGB, if failed choose the first available 
+    vk::SurfaceFormatKHR chosen_format = surface_formats[0];
+    for (auto& format : surface_formats) {
+      if (format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+        chosen_format = format;
+      }
+    }
+
+    // choose present mode, try to find immediate, if failed choose FIFO
+    vk::PresentModeKHR chosen_present_mode = vk::PresentModeKHR::eFifo;
+    for (auto& present_mode : surface_present_modes) {
+      if (present_mode == vk::PresentModeKHR::eImmediate) {
+        chosen_present_mode = vk::PresentModeKHR::eImmediate;
+      }
+    }
+
+    // TODO swap extent
+
+  }
 
   auto init_vulkan() -> auto{
     CHECK_SDL(SDL_Init(SDL_INIT_VIDEO), != 0);
@@ -133,16 +159,21 @@ struct window_and_vulkan_state {
 
     vk::PhysicalDeviceFeatures physical_device_features{};
 
-    vk::DeviceCreateInfo device_create_info({}, 1, &device_queue_create_info, 0,
-                                            nullptr, 0, nullptr,
-                                            &physical_device_features);
+    std::vector<const char *> required_device_extensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+
+    vk::DeviceCreateInfo device_create_info(
+        {}, 1, &device_queue_create_info, 0, nullptr,
+        required_device_extensions.size(), required_device_extensions.data(),
+        &physical_device_features);
 
     device = physical_device.createDevice(device_create_info);
 
     queue = device.getQueue(queue_family_index.value(), 0);
-  }
 
-  auto create_swapchain() -> auto{}
+    // swapchain
+    create_swapchain();
+  }
 
   auto cleanup() -> auto{
     // device.destroySwapchainKHR(swapchain);

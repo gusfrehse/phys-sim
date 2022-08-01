@@ -1,9 +1,12 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_events.h>
+#include <SDL2/SDL_timer.h>
 #include <SDL2/SDL_video.h>
 #include <SDL2/SDL_vulkan.h>
 
 #include <cstdio>
+#include <optional>
+
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
@@ -34,10 +37,15 @@ struct window_and_vulkan_state {
   std::vector<vk::Image> swapchain_images;
   std::vector<vk::ImageView> swapchain_image_views;
 
+  std::optional<uint32_t> queue_family_index = std::nullopt;
+
+  vk::Queue queue;
+
   auto init_vulkan() -> auto{
     CHECK_SDL(SDL_Init(SDL_INIT_VIDEO), != 0);
 
-    auto window = SDL_CreateWindow(
+    // create window
+    window = SDL_CreateWindow(
         "aim trainer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         window_dimensions.width, window_dimensions.height,
         SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
@@ -51,29 +59,49 @@ struct window_and_vulkan_state {
     std::vector<const char *> validation_layers = {
         "VK_LAYER_KHRONOS_validation"};
 
-    vk::InstanceCreateInfo instance_create_info({}, &application_info,
-                                                validation_layers.size(),
-                                                validation_layers.data());
+    // SDL extensions
+    unsigned int extensions_count = 0;
+
+    CHECK_SDL(
+        SDL_Vulkan_GetInstanceExtensions(window, &extensions_count, nullptr),
+        != SDL_TRUE);
+
+    std::vector<char *> extensions(extensions_count);
+
+    CHECK_SDL(SDL_Vulkan_GetInstanceExtensions(
+                  window, &extensions_count,
+                  const_cast<const char **>(extensions.data())),
+              != SDL_TRUE);
+
+    vk::InstanceCreateInfo instance_create_info(
+        {}, &application_info, validation_layers.size(),
+        validation_layers.data(), extensions_count, extensions.data());
 
     instance = vk::createInstance(instance_create_info);
 
-    SDL_Vulkan_CreateSurface(window, instance,
-                             reinterpret_cast<VkSurfaceKHR *>(&surface));
+    CHECK_SDL(SDL_Vulkan_CreateSurface(
+                  window, instance, reinterpret_cast<VkSurfaceKHR *>(&surface)),
+              != SDL_TRUE);
 
     physical_device = nullptr;
     int max_mem = 0;
 
-    printf("analyzing physical devices\n");
+    printf("Analyzing physical devices\n");
     // find device with most memory
-    for (auto& p_dev : instance.enumeratePhysicalDevices()) {
-      vk::PhysicalDeviceMemoryProperties prop = p_dev.getMemoryProperties();
+    for (auto &p_dev : instance.enumeratePhysicalDevices()) {
+      vk::PhysicalDeviceMemoryProperties mem_prop = p_dev.getMemoryProperties();
 
-      int mem = 0;
-      for (auto& heap : prop.memoryHeaps) {
+      printf("Analyzing physical device named '%s'\n",
+             p_dev.getProperties().deviceName.data());
+
+      double mem = 0;
+      for (int i = 0; i < mem_prop.memoryHeapCount; i++) {
+        auto &heap = mem_prop.memoryHeaps[i];
+        printf("\tHeap with %g GB of memory\n", (double)heap.size / 1e9);
         mem += heap.size;
       }
 
-      printf("analyzing physical device with %g giga bytes of total memory\n", (double) mem / 1e9);
+      printf("\tTotal memory %g GB\n", mem / 1e9);
 
       if (mem > max_mem) {
         max_mem = mem;
@@ -81,17 +109,47 @@ struct window_and_vulkan_state {
       }
     }
 
-    // TODO create logical device
+    printf("Chose device named '%s'\n",
+           physical_device.getProperties().deviceName.data());
+
+    // Choose a cool queue family with at least graphics
+    auto queue_family_properties = physical_device.getQueueFamilyProperties();
+
+    for (uint32_t i = 0; i < queue_family_properties.size(); i++) {
+      if (queue_family_properties[i].queueFlags &
+              vk::QueueFlagBits::eGraphics &&
+          physical_device.getSurfaceSupportKHR(i, surface)) {
+
+        // get first family that has present and graphics suppoort
+        queue_family_index = i;
+        break;
+      }
+    }
+
+    float queue_priority = 1.0f;
+
+    vk::DeviceQueueCreateInfo device_queue_create_info(
+        {}, queue_family_index.value(), 1, &queue_priority);
+
+    vk::PhysicalDeviceFeatures physical_device_features{};
+
+    vk::DeviceCreateInfo device_create_info({}, 1, &device_queue_create_info, 0,
+                                            nullptr, 0, nullptr,
+                                            &physical_device_features);
+
+    device = physical_device.createDevice(device_create_info);
+
+    queue = device.getQueue(queue_family_index.value(), 0);
   }
 
   auto create_swapchain() -> auto{}
 
   auto cleanup() -> auto{
-    device.destroySwapchainKHR(swapchain);
+    // device.destroySwapchainKHR(swapchain);
 
-    for (auto &e : swapchain_image_views) {
-      device.destroyImageView(e);
-    }
+    // for (auto &e : swapchain_image_views) {
+    //   device.destroyImageView(e);
+    // }
 
     device.destroy();
 
@@ -110,15 +168,16 @@ auto main() -> int {
   window_and_vulkan_state state;
   state.init();
 
-  bool running = true;
-  SDL_Event event;
-  while (running) {
-    while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_QUIT) {
-        running = false;
-      }
-    }
-  }
+  SDL_Delay(1000);
+  // bool running = true;
+  // SDL_Event event;
+  // while (running) {
+  //   while (SDL_PollEvent(&event)) {
+  //     if (event.type == SDL_QUIT) {
+  //       running = false;
+  //     }
+  //   }
+  // }
 
   state.cleanup();
 }

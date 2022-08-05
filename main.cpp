@@ -29,7 +29,6 @@ struct window_and_vulkan_state {
     int height = 450;
   } window_dimensions;
 
-  vk::DebugUtilsMessengerEXT debug_messenger;
   vk::Instance instance;
   vk::Device device;
   vk::PhysicalDevice physical_device;
@@ -147,18 +146,7 @@ struct window_and_vulkan_state {
     fprintf(stderr, "Created swapchain\n");
   }
 
-  auto init_vulkan() -> auto{
-    CHECK_SDL(SDL_Init(SDL_INIT_VIDEO), != 0);
-
-    // create window
-    window = SDL_CreateWindow(
-        "aim trainer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
-        window_dimensions.width, window_dimensions.height,
-        SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
-
-    CHECK_SDL(window, == 0);
-
-    // instance creation
+  auto create_instance() {
     vk::ApplicationInfo application_info("phys sim");
 
     // validation layer work
@@ -184,10 +172,9 @@ struct window_and_vulkan_state {
         validation_layers.data(), extensions_count, extensions.data());
 
     instance = vk::createInstance(instance_create_info);
+  }
 
-    CHECK_SDL(SDL_Vulkan_CreateSurface(
-                  window, instance, reinterpret_cast<VkSurfaceKHR *>(&surface)),
-              != SDL_TRUE);
+  auto create_physical_device() {
 
     physical_device = nullptr;
     int max_mem = 0;
@@ -217,6 +204,13 @@ struct window_and_vulkan_state {
 
     printf("Chose device named '%s'\n",
            physical_device.getProperties().deviceName.data());
+  }
+
+  auto create_device_and_queues() {
+    CHECK_SDL(SDL_Vulkan_CreateSurface(
+                  window, instance, reinterpret_cast<VkSurfaceKHR *>(&surface)),
+              != SDL_TRUE);
+
 
     // Choose a cool queue family with at least graphics
     auto queue_family_properties = physical_device.getQueueFamilyProperties();
@@ -250,6 +244,25 @@ struct window_and_vulkan_state {
     device = physical_device.createDevice(device_create_info);
 
     queue = device.getQueue(queue_family_index.value(), 0);
+  }
+
+  auto init_vulkan() {
+    CHECK_SDL(SDL_Init(SDL_INIT_VIDEO), != 0);
+
+    // create window
+    window = SDL_CreateWindow(
+        "aim trainer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+        window_dimensions.width, window_dimensions.height,
+        SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
+
+    CHECK_SDL(window, == 0);
+
+    // instance creation
+    create_instance();
+
+    create_physical_device();
+
+    create_device_and_queues();
 
     // swapchain
     create_swapchain();

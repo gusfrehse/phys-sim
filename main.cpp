@@ -16,6 +16,8 @@
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
+#include "shaders.h"
+
 #define CHECK_SDL(x, pred)                                                     \
   if (x pred) {                                                                \
     SDL_Log("SDL_ERROR: " #x ": %s", SDL_GetError());                          \

@@ -47,7 +47,110 @@ struct window_and_vulkan_state {
 
   vk::Queue queue;
 
-  auto create_swapchain() -> auto{
+  vk::PipelineLayout pipeline_layout;
+
+  auto create_graphics_pipeline() {
+    // create fragment shader module
+    vk::ShaderModuleCreateInfo frag_module_info{};
+    frag_module_info.codeSize = basic_frag_spv_len;
+    frag_module_info.pCode = (const uint32_t *)basic_frag_spv;
+
+    vk::ShaderModule frag_module = device.createShaderModule(frag_module_info);
+
+    // create vertex shader module
+    vk::ShaderModuleCreateInfo vert_module_info{};
+    frag_module_info.codeSize = basic_vert_spv_len;
+    frag_module_info.pCode = (const uint32_t *)basic_vert_spv;
+
+    vk::ShaderModule vert_module = device.createShaderModule(vert_module_info);
+
+    // create fragment stage info
+    vk::PipelineShaderStageCreateInfo frag_stage_info{};
+    frag_stage_info.stage = vk::ShaderStageFlagBits::eFragment;
+    frag_stage_info.module = frag_module;
+    frag_stage_info.pName = "main";
+
+    // create fragment stage info
+    vk::PipelineShaderStageCreateInfo vert_stage_info{};
+    vert_stage_info.stage = vk::ShaderStageFlagBits::eVertex;
+    vert_stage_info.module = vert_module;
+    vert_stage_info.pName = "main";
+
+    vk::PipelineShaderStageCreateInfo shader_stages[] = {vert_stage_info,
+                                                         frag_stage_info};
+
+    // vertex input
+    vk::PipelineVertexInputStateCreateInfo vert_input_info{};
+    vert_input_info.vertexBindingDescriptionCount = 0;
+    vert_input_info.pVertexBindingDescriptions = nullptr;
+    vert_input_info.vertexAttributeDescriptionCount = 0;
+    vert_input_info.pVertexAttributeDescriptions = nullptr;
+
+    // topology
+    vk::PipelineInputAssemblyStateCreateInfo input_assembly{};
+    input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
+    input_assembly.primitiveRestartEnable = false;
+
+    // not needed here, maybe when creating command buffer??
+    // vk::Viewport viewport{};
+    // viewport.x = 0.0f;
+    // viewport.y = 0.0f;
+    // viewport.width = (float) swapchain_image_extent.width;
+    // viewport.height = (float) swapchain_image_extent.height;
+    // viewport.minDepth = 0.0f;
+    // viewport.maxDepth = 1.0f;
+
+    // vk::Rect2D scissor({0, 0}, swapchain_image_extent);
+
+    std::vector<vk::DynamicState> dynamic_states = {vk::DynamicState::eViewport,
+                                                    vk::DynamicState::eScissor};
+
+    vk::PipelineDynamicStateCreateInfo dynamic_state_info{};
+    dynamic_state_info.dynamicStateCount = dynamic_states.size();
+    dynamic_state_info.pDynamicStates = dynamic_states.data();
+
+    vk::PipelineViewportStateCreateInfo viewport_state_info{};
+    viewport_state_info.viewportCount = 1;
+    viewport_state_info.scissorCount = 1;
+    // viewport would go here if it was static state
+
+    vk::PipelineRasterizationStateCreateInfo rasterizer_info{};
+    rasterizer_info.depthClampEnable = false;
+    rasterizer_info.rasterizerDiscardEnable = false;
+    rasterizer_info.polygonMode = vk::PolygonMode::eFill;
+    rasterizer_info.lineWidth = 1.0f;
+    rasterizer_info.cullMode = vk::CullModeFlagBits::eBack;
+    rasterizer_info.frontFace = vk::FrontFace::eClockwise;
+    rasterizer_info.depthBiasEnable = false;
+
+    vk::PipelineMultisampleStateCreateInfo multisample_info{};
+    multisample_info.sampleShadingEnable = false;
+    multisample_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    multisample_info.minSampleShading = 1.0f;
+    multisample_info.pSampleMask = nullptr;
+    multisample_info.alphaToCoverageEnable = false;
+    multisample_info.alphaToOneEnable = false;
+
+    vk::PipelineColorBlendAttachmentState color_blend_attachment_state{};
+    color_blend_attachment_state.colorWriteMask =
+        vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+        vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+    color_blend_attachment_state.blendEnable = false;
+
+    vk::PipelineColorBlendStateCreateInfo color_blend_info{};
+    color_blend_info.logicOpEnable = false;
+    color_blend_info.attachmentCount = 1;
+    color_blend_info.pAttachments = &color_blend_attachment_state;
+
+    vk::PipelineLayoutCreateInfo pipeline_layout_info{};
+
+    pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
+
+    device.destroy(frag_module);
+    device.destroy(vert_module);
+  }
+
+  auto create_swapchain() {
     fprintf(stderr, "Creating swapchain\n");
     auto surface_capabilities =
         physical_device.getSurfaceCapabilitiesKHR(surface);
@@ -136,13 +239,15 @@ struct window_and_vulkan_state {
       image_view_create_info.setComponents(
           {vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
            vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity});
-      image_view_create_info.subresourceRange.setAspectMask(vk::ImageAspectFlagBits::eColor);
+      image_view_create_info.subresourceRange.setAspectMask(
+          vk::ImageAspectFlagBits::eColor);
       image_view_create_info.subresourceRange.setBaseMipLevel(0);
       image_view_create_info.subresourceRange.setLevelCount(1);
       image_view_create_info.subresourceRange.setBaseArrayLayer(0);
       image_view_create_info.subresourceRange.setLayerCount(1);
 
-      swapchain_image_views.push_back(device.createImageView(image_view_create_info));
+      swapchain_image_views.push_back(
+          device.createImageView(image_view_create_info));
     }
 
     fprintf(stderr, "Created swapchain\n");
@@ -213,7 +318,6 @@ struct window_and_vulkan_state {
                   window, instance, reinterpret_cast<VkSurfaceKHR *>(&surface)),
               != SDL_TRUE);
 
-
     // Choose a cool queue family with at least graphics
     auto queue_family_properties = physical_device.getQueueFamilyProperties();
 
@@ -271,15 +375,17 @@ struct window_and_vulkan_state {
   }
 
   auto cleanup() -> auto{
+    device.destroy(pipeline_layout);
+
     for (auto &e : swapchain_image_views) {
-      device.destroyImageView(e);
+      device.destroy(e);
     }
 
     device.destroy(swapchain);
 
     device.destroy();
 
-    instance.destroySurfaceKHR(surface);
+    instance.destroy(surface);
     instance.destroy();
     SDL_DestroyWindow(window);
   }

@@ -43,12 +43,65 @@ struct window_and_vulkan_state {
   std::vector<vk::Image> swapchain_images;
   std::vector<vk::ImageView> swapchain_image_views;
 
+  std::vector<vk::Framebuffer> swapchain_framebuffers;
+
   std::optional<uint32_t> queue_family_index = std::nullopt;
 
   vk::Queue queue;
 
   vk::RenderPass renderpass;
   vk::PipelineLayout pipeline_layout;
+  vk::Pipeline graphics_pipeline;
+
+  vk::CommandPool command_pool;
+  vk::CommandBuffer command_buffer;
+
+  auto record_command_buffer(vk::CommandBuffer command_buffer, int image_index) {
+    vk::CommandBufferBeginInfo begin_info{};
+
+    command_buffer.begin(begin_info);
+
+    vk::RenderPassBeginInfo renderpass_begin_info{};
+
+    renderpass_begin_info.renderPass = renderpass;
+    renderpass_begin_info.framebuffer = swapchain_framebuffers[image_index];
+  }
+
+  auto create_command_buffer() {
+    vk::CommandBufferAllocateInfo alloc_info{};
+    alloc_info.commandPool = command_pool;
+    alloc_info.level = vk::CommandBufferLevel::ePrimary;
+    alloc_info.commandBufferCount = 1;
+
+    command_buffer = device.allocateCommandBuffers(alloc_info)[0];
+  }
+
+  auto create_command_pool() {
+    vk::CommandPoolCreateInfo pool_info{};
+    pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
+    pool_info.queueFamilyIndex = queue_family_index.value();
+
+    command_pool = device.createCommandPool(pool_info);
+  }
+
+  auto create_framebuffers() {
+    swapchain_framebuffers.clear();
+
+    for (int i = 0; i < swapchain_image_views.size(); i++) {
+      vk::ImageView attachments[] = {swapchain_image_views[i]};
+
+      vk::FramebufferCreateInfo framebuffer_info{};
+      framebuffer_info.renderPass = renderpass;
+      framebuffer_info.attachmentCount = 1;
+      framebuffer_info.pAttachments = attachments;
+      framebuffer_info.width = swapchain_image_extent.width;
+      framebuffer_info.height = swapchain_image_extent.height;
+      framebuffer_info.layers = 1;
+
+      swapchain_framebuffers.push_back(
+          device.createFramebuffer(framebuffer_info));
+    }
+  }
 
   auto create_renderpass() {
     vk::AttachmentDescription color_attachment_desc{};
@@ -68,7 +121,6 @@ struct window_and_vulkan_state {
     subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
-
 
     vk::RenderPassCreateInfo renderpass_info{};
     renderpass_info.attachmentCount = 1;
@@ -175,6 +227,29 @@ struct window_and_vulkan_state {
     vk::PipelineLayoutCreateInfo pipeline_layout_info{};
 
     pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
+
+    vk::GraphicsPipelineCreateInfo pipeline_info{};
+    pipeline_info.stageCount = 2;
+    pipeline_info.pStages = shader_stages;
+
+    pipeline_info.pVertexInputState = &vert_input_info;
+    pipeline_info.pInputAssemblyState = &input_assembly;
+    pipeline_info.pViewportState = &viewport_state_info;
+    pipeline_info.pRasterizationState = &rasterizer_info;
+    pipeline_info.pMultisampleState = &multisample_info;
+    pipeline_info.pDepthStencilState = nullptr;
+    pipeline_info.pColorBlendState = &color_blend_info;
+    pipeline_info.pDynamicState = &dynamic_state_info;
+
+    pipeline_info.layout = pipeline_layout;
+    pipeline_info.renderPass = renderpass;
+    pipeline_info.subpass = 0;
+
+    pipeline_info.basePipelineHandle = nullptr;
+    pipeline_info.basePipelineIndex = -1;
+
+    graphics_pipeline =
+        device.createGraphicsPipeline(nullptr, pipeline_info).value;
 
     device.destroy(frag_module);
     device.destroy(vert_module);
@@ -406,10 +481,23 @@ struct window_and_vulkan_state {
     create_renderpass();
 
     create_graphics_pipeline();
+
+    create_framebuffers();
+
+    create_command_pool();
+
+    create_command_buffer();
   }
 
   auto cleanup() {
+    device.destroy(command_pool);
+
+    for (auto &fb : swapchain_framebuffers) {
+      device.destroy(fb);
+    }
+
     device.destroy(renderpass);
+    device.destroy(graphics_pipeline);
     device.destroy(pipeline_layout);
 
     for (auto &e : swapchain_image_views) {

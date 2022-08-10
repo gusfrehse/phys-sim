@@ -47,6 +47,7 @@ struct window_and_vulkan_state {
 
   vk::Queue queue;
 
+  vk::RenderPass renderpass;
   vk::PipelineLayout pipeline_layout;
 
   auto create_renderpass() {
@@ -56,6 +57,23 @@ struct window_and_vulkan_state {
     color_attachment_desc.loadOp = vk::AttachmentLoadOp::eClear;
     color_attachment_desc.storeOp = vk::AttachmentStoreOp::eStore;
 
+    vk::AttachmentReference color_attachment_ref{};
+    color_attachment_ref.attachment = 0;
+    color_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;
+
+    vk::SubpassDescription subpass{};
+    subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
+    subpass.colorAttachmentCount = 1;
+    subpass.pColorAttachments = &color_attachment_ref;
+
+
+    vk::RenderPassCreateInfo renderpass_info{};
+    renderpass_info.attachmentCount = 1;
+    renderpass_info.pAttachments = &color_attachment_desc;
+    renderpass_info.subpassCount = 1;
+    renderpass_info.pSubpasses = &subpass;
+
+    renderpass = device.createRenderPass(renderpass_info);
   }
 
   auto create_graphics_pipeline() {
@@ -388,6 +406,7 @@ struct window_and_vulkan_state {
   }
 
   auto cleanup() {
+    device.destroy(renderpass);
     device.destroy(pipeline_layout);
 
     for (auto &e : swapchain_image_views) {

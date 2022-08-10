@@ -57,6 +57,9 @@ struct window_and_vulkan_state {
     color_attachment_desc.loadOp = vk::AttachmentLoadOp::eClear;
     color_attachment_desc.storeOp = vk::AttachmentStoreOp::eStore;
 
+    color_attachment_desc.initialLayout = vk::ImageLayout::eUndefined;
+    color_attachment_desc.finalLayout = vk::ImageLayout::ePresentSrcKHR;
+
     vk::AttachmentReference color_attachment_ref{};
     color_attachment_ref.attachment = 0;
     color_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;

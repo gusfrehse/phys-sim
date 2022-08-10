@@ -49,6 +49,15 @@ struct window_and_vulkan_state {
 
   vk::PipelineLayout pipeline_layout;
 
+  auto create_renderpass() {
+    vk::AttachmentDescription color_attachment_desc{};
+    color_attachment_desc.format = swapchain_image_format;
+    color_attachment_desc.samples = vk::SampleCountFlagBits::e1;
+    color_attachment_desc.loadOp = vk::AttachmentLoadOp::eClear;
+    color_attachment_desc.storeOp = vk::AttachmentStoreOp::eStore;
+
+  }
+
   auto create_graphics_pipeline() {
     // create fragment shader module
     vk::ShaderModuleCreateInfo frag_module_info{};
@@ -59,8 +68,8 @@ struct window_and_vulkan_state {
 
     // create vertex shader module
     vk::ShaderModuleCreateInfo vert_module_info{};
-    frag_module_info.codeSize = basic_vert_spv_len;
-    frag_module_info.pCode = (const uint32_t *)basic_vert_spv;
+    vert_module_info.codeSize = basic_vert_spv_len;
+    vert_module_info.pCode = (const uint32_t *)basic_vert_spv;
 
     vk::ShaderModule vert_module = device.createShaderModule(vert_module_info);
 
@@ -372,9 +381,13 @@ struct window_and_vulkan_state {
 
     // swapchain
     create_swapchain();
+
+    create_renderpass();
+
+    create_graphics_pipeline();
   }
 
-  auto cleanup() -> auto{
+  auto cleanup() {
     device.destroy(pipeline_layout);
 
     for (auto &e : swapchain_image_views) {

@@ -1,3 +1,5 @@
 *.o
-./main
+main
 shaders.h
+*.spv
+

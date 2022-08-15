@@ -56,15 +56,61 @@ struct window_and_vulkan_state {
   vk::CommandPool command_pool;
   vk::CommandBuffer command_buffer;
 
-  auto record_command_buffer(vk::CommandBuffer command_buffer, int image_index) {
+  vk::Semaphore image_available_semaphore;
+  vk::Semaphore render_finished_semaphore;
+  vk::Fence in_flight_fence;
+
+  auto record_command_buffer(vk::CommandBuffer command_buffer,
+                             int image_index) {
     vk::CommandBufferBeginInfo begin_info{};
 
     command_buffer.begin(begin_info);
 
     vk::RenderPassBeginInfo renderpass_begin_info{};
-
     renderpass_begin_info.renderPass = renderpass;
     renderpass_begin_info.framebuffer = swapchain_framebuffers[image_index];
+    renderpass_begin_info.renderArea.offset = vk::Offset2D(0, 0);
+    renderpass_begin_info.renderArea.extent = swapchain_image_extent;
+
+    vk::ClearValue clear_color(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
+    renderpass_begin_info.clearValueCount = 1;
+    renderpass_begin_info.pClearValues = &clear_color;
+
+    command_buffer.beginRenderPass(renderpass_begin_info,
+                                   vk::SubpassContents::eInline);
+    command_buffer.bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                graphics_pipeline);
+
+    vk::Viewport viewport{};
+    viewport.x = 0.0f;
+    viewport.y = 0.0f;
+    viewport.width = static_cast<float>(swapchain_image_extent.width);
+    viewport.height = static_cast<float>(swapchain_image_extent.height);
+    viewport.minDepth = 0.0f;
+    viewport.maxDepth = 1.0f;
+
+    command_buffer.setViewport(0, {viewport});
+
+    vk::Rect2D scissor{{0, 0}, swapchain_image_extent};
+
+    command_buffer.setScissor(0, {scissor});
+
+    command_buffer.draw(3, 1, 0, 0);
+
+    command_buffer.endRenderPass();
+
+    command_buffer.end();
+  }
+
+  auto create_sync_objects() {
+    vk::SemaphoreCreateInfo semaphore_info{};
+
+    vk::FenceCreateInfo fence_info{vk::FenceCreateFlagBits::eSignaled};
+
+    image_available_semaphore = device.createSemaphore(semaphore_info);
+    render_finished_semaphore = device.createSemaphore(semaphore_info);
+
+    in_flight_fence = device.createFence(fence_info);
   }
 
   auto create_command_buffer() {
@@ -122,11 +168,21 @@ struct window_and_vulkan_state {
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
 
+    vk::SubpassDependency dependency{};
+    dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    dependency.dstSubpass = 0;
+    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcAccessMask = vk::AccessFlagBits::eNone;
+    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+
     vk::RenderPassCreateInfo renderpass_info{};
     renderpass_info.attachmentCount = 1;
     renderpass_info.pAttachments = &color_attachment_desc;
     renderpass_info.subpassCount = 1;
     renderpass_info.pSubpasses = &subpass;
+    renderpass_info.dependencyCount = 1;
+    renderpass_info.pDependencies = &dependency;
 
     renderpass = device.createRenderPass(renderpass_info);
   }
@@ -172,17 +228,6 @@ struct window_and_vulkan_state {
     vk::PipelineInputAssemblyStateCreateInfo input_assembly{};
     input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
     input_assembly.primitiveRestartEnable = false;
-
-    // not needed here, maybe when creating command buffer??
-    // vk::Viewport viewport{};
-    // viewport.x = 0.0f;
-    // viewport.y = 0.0f;
-    // viewport.width = (float) swapchain_image_extent.width;
-    // viewport.height = (float) swapchain_image_extent.height;
-    // viewport.minDepth = 0.0f;
-    // viewport.maxDepth = 1.0f;
-
-    // vk::Rect2D scissor({0, 0}, swapchain_image_extent);
 
     std::vector<vk::DynamicState> dynamic_states = {vk::DynamicState::eViewport,
                                                     vk::DynamicState::eScissor};
@@ -487,9 +532,15 @@ struct window_and_vulkan_state {
     create_command_pool();
 
     create_command_buffer();
+
+    create_sync_objects();
   }
 
   auto cleanup() {
+    device.destroy(image_available_semaphore);
+    device.destroy(render_finished_semaphore);
+    device.destroy(in_flight_fence);
+
     device.destroy(command_pool);
 
     for (auto &fb : swapchain_framebuffers) {
@@ -514,22 +565,78 @@ struct window_and_vulkan_state {
   }
 
   auto init() -> auto{ init_vulkan(); }
+
+  auto draw_frame() {
+    // wait for in flight fences (whatever that means...)
+    if (device.waitForFences({in_flight_fence}, true, UINT64_MAX) !=
+        vk::Result::eSuccess) {
+      printf("wait for fence failed ... wtf\n");
+      exit(123);
+    }
+
+    device.resetFences({in_flight_fence});
+
+    uint32_t image_index =
+        device
+            .acquireNextImageKHR(swapchain, UINT64_MAX,
+                                 image_available_semaphore, nullptr)
+            .value;
+
+    command_buffer.reset();
+    record_command_buffer(command_buffer, image_index);
+
+    vk::SubmitInfo submit_info{};
+
+    vk::Semaphore wait_semaphores[] = {image_available_semaphore};
+    vk::PipelineStageFlags wait_stages[] = {
+        vk::PipelineStageFlagBits::eColorAttachmentOutput};
+
+    submit_info.waitSemaphoreCount = 1;
+    submit_info.pWaitSemaphores = wait_semaphores;
+    submit_info.pWaitDstStageMask = wait_stages;
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
+
+    vk::Semaphore signal_semaphores[] = {render_finished_semaphore};
+    submit_info.signalSemaphoreCount = 1;
+    submit_info.pSignalSemaphores = signal_semaphores;
+
+    queue.submit({submit_info}, in_flight_fence);
+
+    vk::PresentInfoKHR present_info{};
+    present_info.waitSemaphoreCount = 1;
+    present_info.pWaitSemaphores = signal_semaphores;
+
+    vk::SwapchainKHR swapchains[] = {swapchain};
+    present_info.swapchainCount = 1;
+    present_info.pSwapchains = swapchains;
+    present_info.pImageIndices = &image_index;
+    present_info.pResults = nullptr;
+
+    auto present_result = queue.presentKHR(present_info);
+    if (present_result != vk::Result::eSuccess) {
+      printf("present failed ... what\n");
+      exit(231);
+    }
+  }
 };
 
 auto main() -> int {
   window_and_vulkan_state state;
   state.init();
 
-  SDL_Delay(1000);
-  // bool running = true;
-  // SDL_Event event;
-  // while (running) {
-  //   while (SDL_PollEvent(&event)) {
-  //     if (event.type == SDL_QUIT) {
-  //       running = false;
-  //     }
-  //   }
-  // }
+  // SDL_Delay(1000);
+  bool running = true;
+  SDL_Event event;
+  while (running) {
+    while (SDL_PollEvent(&event)) {
+      if (event.type == SDL_QUIT) {
+        running = false;
+      }
+
+      state.draw_frame();
+    }
+  }
 
   state.cleanup();
 }

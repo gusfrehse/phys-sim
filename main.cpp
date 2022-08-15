@@ -24,6 +24,8 @@
     exit(1);                                                                   \
   }
 
+const int MAX_FRAMES_IN_FLIGHT = 2;
+
 struct window_and_vulkan_state {
   SDL_Window *window;
   struct {
@@ -54,11 +56,13 @@ struct window_and_vulkan_state {
   vk::Pipeline graphics_pipeline;
 
   vk::CommandPool command_pool;
-  vk::CommandBuffer command_buffer;
+  std::vector<vk::CommandBuffer> command_buffers;
 
-  vk::Semaphore image_available_semaphore;
-  vk::Semaphore render_finished_semaphore;
-  vk::Fence in_flight_fence;
+  std::vector<vk::Semaphore> image_available_semaphores;
+  std::vector<vk::Semaphore> render_finished_semaphores;
+  std::vector<vk::Fence> in_flight_fences;
+
+  uint32_t current_in_flight_frame = 0;
 
   auto record_command_buffer(vk::CommandBuffer command_buffer,
                              int image_index) {
@@ -107,19 +111,22 @@ struct window_and_vulkan_state {
 
     vk::FenceCreateInfo fence_info{vk::FenceCreateFlagBits::eSignaled};
 
-    image_available_semaphore = device.createSemaphore(semaphore_info);
-    render_finished_semaphore = device.createSemaphore(semaphore_info);
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      image_available_semaphores.push_back(device.createSemaphore(semaphore_info));
+      render_finished_semaphores.push_back(device.createSemaphore(semaphore_info));
 
-    in_flight_fence = device.createFence(fence_info);
+      in_flight_fences.push_back(device.createFence(fence_info));
+    }
+
   }
 
-  auto create_command_buffer() {
+  auto create_command_buffers() {
     vk::CommandBufferAllocateInfo alloc_info{};
     alloc_info.commandPool = command_pool;
     alloc_info.level = vk::CommandBufferLevel::ePrimary;
-    alloc_info.commandBufferCount = 1;
+    alloc_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 
-    command_buffer = device.allocateCommandBuffers(alloc_info)[0];
+    command_buffers = device.allocateCommandBuffers(alloc_info);
   }
 
   auto create_command_pool() {
@@ -531,15 +538,19 @@ struct window_and_vulkan_state {
 
     create_command_pool();
 
-    create_command_buffer();
+    create_command_buffers();
 
     create_sync_objects();
   }
 
   auto cleanup() {
-    device.destroy(image_available_semaphore);
-    device.destroy(render_finished_semaphore);
-    device.destroy(in_flight_fence);
+    device.waitIdle();
+
+    for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      device.destroy(image_available_semaphores[i]);
+      device.destroy(render_finished_semaphores[i]);
+      device.destroy(in_flight_fences[i]);
+    }
 
     device.destroy(command_pool);
 
@@ -568,26 +579,26 @@ struct window_and_vulkan_state {
 
   auto draw_frame() {
     // wait for in flight fences (whatever that means...)
-    if (device.waitForFences({in_flight_fence}, true, UINT64_MAX) !=
+    if (device.waitForFences({in_flight_fences[current_in_flight_frame]}, true, UINT64_MAX) !=
         vk::Result::eSuccess) {
       printf("wait for fence failed ... wtf\n");
       exit(123);
     }
 
-    device.resetFences({in_flight_fence});
+    device.resetFences({in_flight_fences[current_in_flight_frame]});
 
     uint32_t image_index =
         device
             .acquireNextImageKHR(swapchain, UINT64_MAX,
-                                 image_available_semaphore, nullptr)
+                                 image_available_semaphores[current_in_flight_frame], nullptr)
             .value;
 
-    command_buffer.reset();
-    record_command_buffer(command_buffer, image_index);
+    command_buffers[current_in_flight_frame].reset();
+    record_command_buffer(command_buffers[current_in_flight_frame], image_index);
 
     vk::SubmitInfo submit_info{};
 
-    vk::Semaphore wait_semaphores[] = {image_available_semaphore};
+    vk::Semaphore wait_semaphores[] = {image_available_semaphores[current_in_flight_frame]};
     vk::PipelineStageFlags wait_stages[] = {
         vk::PipelineStageFlagBits::eColorAttachmentOutput};
 
@@ -595,13 +606,13 @@ struct window_and_vulkan_state {
     submit_info.pWaitSemaphores = wait_semaphores;
     submit_info.pWaitDstStageMask = wait_stages;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffer;
+    submit_info.pCommandBuffers = &command_buffers[current_in_flight_frame];
 
-    vk::Semaphore signal_semaphores[] = {render_finished_semaphore};
+    vk::Semaphore signal_semaphores[] = {render_finished_semaphores[current_in_flight_frame]};
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
 
-    queue.submit({submit_info}, in_flight_fence);
+    queue.submit({submit_info}, in_flight_fences[current_in_flight_frame]);
 
     vk::PresentInfoKHR present_info{};
     present_info.waitSemaphoreCount = 1;
@@ -618,6 +629,8 @@ struct window_and_vulkan_state {
       printf("present failed ... what\n");
       exit(231);
     }
+
+    current_in_flight_frame = (current_in_flight_frame + 1) % MAX_FRAMES_IN_FLIGHT;
   }
 };
 
@@ -637,6 +650,7 @@ auto main() -> int {
       state.draw_frame();
     }
   }
+
 
   state.cleanup();
 }

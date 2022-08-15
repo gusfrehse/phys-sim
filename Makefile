@@ -1,7 +1,7 @@
 CC := g++
 CXX := g++
 
-CFLAGS := -g
+CXXFLAGS := -g
 LDLIBS := -lSDL2 -lvulkan
 
 EXE := main

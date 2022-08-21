@@ -112,12 +112,13 @@ struct window_and_vulkan_state {
     vk::FenceCreateInfo fence_info{vk::FenceCreateFlagBits::eSignaled};
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-      image_available_semaphores.push_back(device.createSemaphore(semaphore_info));
-      render_finished_semaphores.push_back(device.createSemaphore(semaphore_info));
+      image_available_semaphores.push_back(
+          device.createSemaphore(semaphore_info));
+      render_finished_semaphores.push_back(
+          device.createSemaphore(semaphore_info));
 
       in_flight_fences.push_back(device.createFence(fence_info));
     }
-
   }
 
   auto create_command_buffers() {
@@ -135,25 +136,6 @@ struct window_and_vulkan_state {
     pool_info.queueFamilyIndex = queue_family_index.value();
 
     command_pool = device.createCommandPool(pool_info);
-  }
-
-  auto create_framebuffers() {
-    swapchain_framebuffers.clear();
-
-    for (int i = 0; i < swapchain_image_views.size(); i++) {
-      vk::ImageView attachments[] = {swapchain_image_views[i]};
-
-      vk::FramebufferCreateInfo framebuffer_info{};
-      framebuffer_info.renderPass = renderpass;
-      framebuffer_info.attachmentCount = 1;
-      framebuffer_info.pAttachments = attachments;
-      framebuffer_info.width = swapchain_image_extent.width;
-      framebuffer_info.height = swapchain_image_extent.height;
-      framebuffer_info.layers = 1;
-
-      swapchain_framebuffers.push_back(
-          device.createFramebuffer(framebuffer_info));
-    }
   }
 
   auto create_renderpass() {
@@ -388,6 +370,7 @@ struct window_and_vulkan_state {
     swapchain_images = device.getSwapchainImagesKHR(swapchain);
 
     // create the image views
+    swapchain_image_views.clear();
     for (auto &image : swapchain_images) {
       vk::ImageViewCreateInfo image_view_create_info{};
       image_view_create_info.setImage(image);
@@ -408,6 +391,47 @@ struct window_and_vulkan_state {
     }
 
     fprintf(stderr, "Created swapchain\n");
+  }
+
+  auto create_framebuffers() {
+    swapchain_framebuffers.clear();
+
+    for (int i = 0; i < swapchain_image_views.size(); i++) {
+      vk::ImageView attachments[] = {swapchain_image_views[i]};
+
+      vk::FramebufferCreateInfo framebuffer_info{};
+      framebuffer_info.renderPass = renderpass;
+      framebuffer_info.attachmentCount = 1;
+      framebuffer_info.pAttachments = attachments;
+      framebuffer_info.width = swapchain_image_extent.width;
+      framebuffer_info.height = swapchain_image_extent.height;
+      framebuffer_info.layers = 1;
+
+      swapchain_framebuffers.push_back(
+          device.createFramebuffer(framebuffer_info));
+    }
+  }
+
+  auto cleanup_swapchain() {
+    for (auto &fb : swapchain_framebuffers) {
+      device.destroy(fb);
+    }
+
+    for (auto &e : swapchain_image_views) {
+      device.destroy(e);
+    }
+
+    device.destroy(swapchain);
+  }
+
+  auto recreate_swapchain() {
+    device.waitIdle();
+
+    cleanup_swapchain();
+
+    create_swapchain();
+
+    create_framebuffers();
   }
 
   auto create_instance() {
@@ -546,6 +570,8 @@ struct window_and_vulkan_state {
   auto cleanup() {
     device.waitIdle();
 
+    cleanup_swapchain();
+
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       device.destroy(image_available_semaphores[i]);
       device.destroy(render_finished_semaphores[i]);
@@ -554,19 +580,9 @@ struct window_and_vulkan_state {
 
     device.destroy(command_pool);
 
-    for (auto &fb : swapchain_framebuffers) {
-      device.destroy(fb);
-    }
-
     device.destroy(renderpass);
     device.destroy(graphics_pipeline);
     device.destroy(pipeline_layout);
-
-    for (auto &e : swapchain_image_views) {
-      device.destroy(e);
-    }
-
-    device.destroy(swapchain);
 
     device.destroy();
 
@@ -579,26 +595,35 @@ struct window_and_vulkan_state {
 
   auto draw_frame() {
     // wait for in flight fences (whatever that means...)
-    if (device.waitForFences({in_flight_fences[current_in_flight_frame]}, true, UINT64_MAX) !=
-        vk::Result::eSuccess) {
+    if (device.waitForFences({in_flight_fences[current_in_flight_frame]}, true,
+                             UINT64_MAX) != vk::Result::eSuccess) {
       printf("wait for fence failed ... wtf\n");
       exit(123);
     }
 
     device.resetFences({in_flight_fences[current_in_flight_frame]});
 
-    uint32_t image_index =
-        device
-            .acquireNextImageKHR(swapchain, UINT64_MAX,
-                                 image_available_semaphores[current_in_flight_frame], nullptr)
-            .value;
+    uint32_t next_image;
+    try {
+      auto next_image_result = device.acquireNextImageKHR(
+          swapchain, UINT64_MAX,
+          image_available_semaphores[current_in_flight_frame], nullptr);
+
+      next_image = next_image_result.value;
+    } catch (vk::OutOfDateKHRError const &e) {
+      // probably resized the window, need to recreate the swapchain
+      fprintf(stderr, "A recreating swapchain\n");
+      recreate_swapchain();
+      return;
+    }
 
     command_buffers[current_in_flight_frame].reset();
-    record_command_buffer(command_buffers[current_in_flight_frame], image_index);
+    record_command_buffer(command_buffers[current_in_flight_frame], next_image);
 
     vk::SubmitInfo submit_info{};
 
-    vk::Semaphore wait_semaphores[] = {image_available_semaphores[current_in_flight_frame]};
+    vk::Semaphore wait_semaphores[] = {
+        image_available_semaphores[current_in_flight_frame]};
     vk::PipelineStageFlags wait_stages[] = {
         vk::PipelineStageFlagBits::eColorAttachmentOutput};
 
@@ -608,7 +633,8 @@ struct window_and_vulkan_state {
     submit_info.commandBufferCount = 1;
     submit_info.pCommandBuffers = &command_buffers[current_in_flight_frame];
 
-    vk::Semaphore signal_semaphores[] = {render_finished_semaphores[current_in_flight_frame]};
+    vk::Semaphore signal_semaphores[] = {
+        render_finished_semaphores[current_in_flight_frame]};
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
 
@@ -621,16 +647,27 @@ struct window_and_vulkan_state {
     vk::SwapchainKHR swapchains[] = {swapchain};
     present_info.swapchainCount = 1;
     present_info.pSwapchains = swapchains;
-    present_info.pImageIndices = &image_index;
+    present_info.pImageIndices = &next_image;
     present_info.pResults = nullptr;
 
-    auto present_result = queue.presentKHR(present_info);
-    if (present_result != vk::Result::eSuccess) {
-      printf("present failed ... what\n");
-      exit(231);
+    try {
+      auto present_result = queue.presentKHR(present_info);
+
+      if (present_result != vk::Result::eSuccess) {
+        printf("present failed ... what\n");
+        exit(231);
+      }
+
+    } catch (vk::OutOfDateKHRError const &e) {
+      fprintf(stderr, "B recreating swapchain\n");
+      // needs to recreate the swapchain
+      recreate_swapchain();
+
+      return;
     }
 
-    current_in_flight_frame = (current_in_flight_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+    current_in_flight_frame =
+        (current_in_flight_frame + 1) % MAX_FRAMES_IN_FLIGHT;
   }
 };
 
@@ -650,7 +687,6 @@ auto main() -> int {
       state.draw_frame();
     }
   }
-
 
   state.cleanup();
 }

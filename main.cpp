@@ -5,8 +5,11 @@
 #include <SDL2/SDL_vulkan.h>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
+#include <glm/geometric.hpp>
+#include <glm/trigonometric.hpp>
 #include <limits>
 #include <optional>
 
@@ -15,6 +18,8 @@
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
+
+#include <glm/glm.hpp>
 
 #include "shaders.h"
 
@@ -25,6 +30,43 @@
   }
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
+
+struct vertex {
+    glm::vec2 pos;
+    glm::vec3 color;
+
+    static std::array<vk::VertexInputAttributeDescription, 2> get_attribute_descriptions() {
+        std::array<vk::VertexInputAttributeDescription, 2> attrib_description{};
+
+        attrib_description[0].binding = 0;
+        attrib_description[0].location = 0;
+        attrib_description[0].format = vk::Format::eR32G32Sfloat;
+        attrib_description[0].offset = offsetof(vertex, pos);
+
+        attrib_description[1].binding = 0;
+        attrib_description[1].location = 1;
+        attrib_description[1].format = vk::Format::eR32G32B32Sfloat;
+        attrib_description[1].offset = offsetof(vertex, color);
+
+        return attrib_description;
+    }
+
+
+    static vk::VertexInputBindingDescription getBindingDescription() {
+        vk::VertexInputBindingDescription binding_description{};
+        binding_description.binding = 0;
+        binding_description.stride = sizeof(vertex);
+        binding_description.inputRate = vk::VertexInputRate::eVertex;
+
+        return binding_description;
+    }
+};
+
+std::vector<vertex> vertices = {
+    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+};
 
 struct window_and_vulkan_state {
   SDL_Window *window;
@@ -58,9 +100,14 @@ struct window_and_vulkan_state {
   vk::CommandPool command_pool;
   std::vector<vk::CommandBuffer> command_buffers;
 
+  vk::CommandPool alloc_command_pool;
+
   std::vector<vk::Semaphore> image_available_semaphores;
   std::vector<vk::Semaphore> render_finished_semaphores;
   std::vector<vk::Fence> in_flight_fences;
+
+  vk::Buffer vertex_buffer;
+  vk::DeviceMemory vertex_buffer_memory;
 
   uint32_t current_in_flight_frame = 0;
 
@@ -98,8 +145,10 @@ struct window_and_vulkan_state {
     vk::Rect2D scissor{{0, 0}, swapchain_image_extent};
 
     command_buffer.setScissor(0, {scissor});
+    
+    command_buffer.bindVertexBuffers(0, {vertex_buffer}, {0});
 
-    command_buffer.draw(3, 1, 0, 0);
+    command_buffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
     command_buffer.endRenderPass();
 
@@ -121,6 +170,126 @@ struct window_and_vulkan_state {
     }
   }
 
+  std::pair<vk::Buffer, vk::DeviceMemory> create_buffer(vk::DeviceSize size,
+          vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties) {
+
+      vk::Buffer buffer;
+      vk::DeviceMemory buffer_memory;
+
+      vk::BufferCreateInfo buffer_info{};
+      buffer_info.size = size;
+      buffer_info.usage = usage;
+      buffer_info.sharingMode = vk::SharingMode::eExclusive;
+
+      buffer = device.createBuffer(buffer_info);
+
+      vk::MemoryRequirements mem_requirements =
+          device.getBufferMemoryRequirements(buffer);
+
+      auto find_memory_type = [this](uint32_t type_filter,
+              vk::MemoryPropertyFlags properties){
+          vk::PhysicalDeviceMemoryProperties mem_properties =
+              physical_device.getMemoryProperties();
+
+          for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+              if (type_filter & (1 << i)) {
+                  if ((mem_properties.memoryTypes[i].propertyFlags & properties)
+                    == properties) {
+                    return i;
+                  }
+              }
+          }
+
+          fprintf(stderr, "ERROR: failed to find memory type\n");
+          exit(1);
+      };
+
+      vk::MemoryAllocateInfo alloc_info{};
+      alloc_info.allocationSize = mem_requirements.size;
+      alloc_info.memoryTypeIndex =
+          find_memory_type(mem_requirements.memoryTypeBits, properties);
+
+      buffer_memory = device.allocateMemory(alloc_info);
+
+      device.bindBufferMemory(buffer, buffer_memory, 0);
+
+      return {buffer, buffer_memory};
+  }
+
+  auto copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) {
+      // create a command buffer that will be used only once to copy memory from
+      // (in this specific case) from the src buffer to dst buffer
+
+
+      vk::CommandBufferAllocateInfo alloc_info{};
+      alloc_info.level = vk::CommandBufferLevel::ePrimary;
+      alloc_info.commandPool = alloc_command_pool;
+      alloc_info.commandBufferCount = 1;
+
+      vk::CommandBuffer command_buffer =
+          device.allocateCommandBuffers(alloc_info)[0];
+
+      // record cmdbuffer
+      vk::CommandBufferBeginInfo begin_info(
+              vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+
+      command_buffer.begin(begin_info);
+
+      vk::BufferCopy copy_region{};
+      copy_region.srcOffset = 0;
+      copy_region.dstOffset = 0;
+      copy_region.size = size;
+
+      command_buffer.copyBuffer(src, dst, {copy_region});
+
+      command_buffer.end();
+
+      // submit command buffer
+      vk::SubmitInfo submit_info{};
+      submit_info.commandBufferCount = 1;
+      submit_info.pCommandBuffers = &command_buffer;
+
+      queue.submit({submit_info});
+
+      // wait
+      queue.waitIdle();
+
+      device.freeCommandBuffers(alloc_command_pool, {command_buffer});
+  }
+
+  auto create_vertex_buffers() {
+      vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+
+
+      // create staging buffer and memory
+      auto [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size,
+              vk::BufferUsageFlagBits::eTransferSrc,
+              vk::MemoryPropertyFlagBits::eHostVisible |
+              vk::MemoryPropertyFlagBits::eHostCoherent);
+
+
+      // copy data to staging buffer
+      void* data = device.mapMemory(staging_buffer_memory, 0, buffer_size);
+
+      memcpy(data, vertices.data(), (size_t) buffer_size);
+
+      device.unmapMemory(staging_buffer_memory);
+
+
+      // create vertex buffer
+      std::tie(vertex_buffer, vertex_buffer_memory) =
+          create_buffer(
+                  buffer_size,
+                  vk::BufferUsageFlagBits::eVertexBuffer |
+                  vk::BufferUsageFlagBits::eTransferDst,
+                  vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+      copy_buffer(staging_buffer, vertex_buffer, buffer_size);
+
+      device.destroy(staging_buffer);
+      device.free(staging_buffer_memory);
+  }
+
   auto create_command_buffers() {
     vk::CommandBufferAllocateInfo alloc_info{};
     alloc_info.commandPool = command_pool;
@@ -130,12 +299,18 @@ struct window_and_vulkan_state {
     command_buffers = device.allocateCommandBuffers(alloc_info);
   }
 
-  auto create_command_pool() {
+  auto create_command_pools() {
     vk::CommandPoolCreateInfo pool_info{};
     pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
     pool_info.queueFamilyIndex = queue_family_index.value();
 
     command_pool = device.createCommandPool(pool_info);
+
+    vk::CommandPoolCreateInfo alloc_pool_info{};
+    alloc_pool_info.flags = vk::CommandPoolCreateFlagBits::eTransient;
+    alloc_pool_info.queueFamilyIndex = queue_family_index.value();
+
+    alloc_command_pool = device.createCommandPool(alloc_pool_info);
   }
 
   auto create_renderpass() {
@@ -207,11 +382,14 @@ struct window_and_vulkan_state {
                                                          frag_stage_info};
 
     // vertex input
+    auto binding_desc = vertex::getBindingDescription();
+    auto attrib_desc = vertex::get_attribute_descriptions();
+
     vk::PipelineVertexInputStateCreateInfo vert_input_info{};
-    vert_input_info.vertexBindingDescriptionCount = 0;
-    vert_input_info.pVertexBindingDescriptions = nullptr;
-    vert_input_info.vertexAttributeDescriptionCount = 0;
-    vert_input_info.pVertexAttributeDescriptions = nullptr;
+    vert_input_info.vertexBindingDescriptionCount = 1;
+    vert_input_info.pVertexBindingDescriptions = &binding_desc;
+    vert_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrib_desc.size());
+    vert_input_info.pVertexAttributeDescriptions = attrib_desc.data();
 
     // topology
     vk::PipelineInputAssemblyStateCreateInfo input_assembly{};
@@ -290,7 +468,7 @@ struct window_and_vulkan_state {
   }
 
   auto create_swapchain() {
-    fprintf(stderr, "Creating swapchain\n");
+    //fprintf(stderr, "Creating swapchain\n");
     auto surface_capabilities =
         physical_device.getSurfaceCapabilitiesKHR(surface);
     auto surface_formats = physical_device.getSurfaceFormatsKHR(surface);
@@ -390,7 +568,7 @@ struct window_and_vulkan_state {
           device.createImageView(image_view_create_info));
     }
 
-    fprintf(stderr, "Created swapchain\n");
+    //fprintf(stderr, "Created swapchain\n");
   }
 
   auto create_framebuffers() {
@@ -560,7 +738,9 @@ struct window_and_vulkan_state {
 
     create_framebuffers();
 
-    create_command_pool();
+    create_command_pools();
+
+    create_vertex_buffers();
 
     create_command_buffers();
 
@@ -572,6 +752,9 @@ struct window_and_vulkan_state {
 
     cleanup_swapchain();
 
+    device.destroy(vertex_buffer);
+    device.free(vertex_buffer_memory);
+
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       device.destroy(image_available_semaphores[i]);
       device.destroy(render_finished_semaphores[i]);
@@ -579,6 +762,7 @@ struct window_and_vulkan_state {
     }
 
     device.destroy(command_pool);
+    device.destroy(alloc_command_pool);
 
     device.destroy(renderpass);
     device.destroy(graphics_pipeline);
@@ -612,7 +796,7 @@ struct window_and_vulkan_state {
       next_image = next_image_result.value;
     } catch (vk::OutOfDateKHRError const &e) {
       // probably resized the window, need to recreate the swapchain
-      fprintf(stderr, "A recreating swapchain\n");
+      //fprintf(stderr, "A recreating swapchain\n");
       recreate_swapchain();
       return;
     }
@@ -659,7 +843,7 @@ struct window_and_vulkan_state {
       }
 
     } catch (vk::OutOfDateKHRError const &e) {
-      fprintf(stderr, "B recreating swapchain\n");
+      //fprintf(stderr, "B recreating swapchain\n");
       // needs to recreate the swapchain
       recreate_swapchain();
 
@@ -683,10 +867,12 @@ auto main() -> int {
       if (event.type == SDL_QUIT) {
         running = false;
       }
-
-      state.draw_frame();
     }
+
+    state.draw_frame();
   }
 
   state.cleanup();
 }
+
+/* vim: set sts=4 ts=4 sw=4 et: */

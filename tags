@@ -1,0 +1,75 @@
+!_TAG_FILE_FORMAT	2	/extended format; --format=1 will not append ;" to lines/
+!_TAG_FILE_SORTED	1	/0=unsorted, 1=sorted, 2=foldcase/
+!_TAG_OUTPUT_EXCMD	mixed	/number, pattern, mixed, or combineV2/
+!_TAG_OUTPUT_FILESEP	slash	/slash or backslash/
+!_TAG_OUTPUT_MODE	u-ctags	/u-ctags or e-ctags/
+!_TAG_PATTERN_LENGTH_LIMIT	96	/0 for no limit/
+!_TAG_PROC_CWD	/home/gus/code/phys-sim/	//
+!_TAG_PROGRAM_AUTHOR	Universal Ctags Team	//
+!_TAG_PROGRAM_NAME	Universal Ctags	/Derived from Exuberant Ctags/
+!_TAG_PROGRAM_URL	https://ctags.io/	/official site/
+!_TAG_PROGRAM_VERSION	5.9.0	/p5.9.20220828.0/
+$(EXE)	Makefile	/^$(EXE) : $(OBJS)$/;"	t
+%_frag.spv	Makefile	/^%_frag.spv : %_frag.glsl$/;"	t
+%_vert.spv	Makefile	/^%_vert.spv : %_vert.glsl$/;"	t
+CC	Makefile	/^CC := g++$/;"	m
+CHECK_SDL	main.cpp	/^#define CHECK_SDL(/;"	d	file:
+EXE	Makefile	/^EXE := main$/;"	m
+LDLIBS	Makefile	/^LDLIBS := -lSDL2 -lvulkan$/;"	m
+MAX_FRAMES_IN_FLIGHT	main.cpp	/^const int MAX_FRAMES_IN_FLIGHT = 2;$/;"	v	typeref:typename:const int
+OBJS	Makefile	/^OBJS := main.o$/;"	m
+SHADERS_H	shaders.h	/^#define SHADERS_H$/;"	d
+SPVS	Makefile	/^SPVS := basic_frag.spv basic_vert.spv$/;"	m
+__anon3b5b11db0108	main.cpp	/^  struct {$/;"	s	struct:window_and_vulkan_state	file:
+basic_frag_spv	shaders.h	/^unsigned char basic_frag_spv[] = {$/;"	v	typeref:typename:unsigned char[]
+basic_frag_spv_len	shaders.h	/^unsigned int basic_frag_spv_len = 572;$/;"	v	typeref:typename:unsigned int
+basic_vert_spv	shaders.h	/^unsigned char basic_vert_spv[] = {$/;"	v	typeref:typename:unsigned char[]
+basic_vert_spv_len	shaders.h	/^unsigned int basic_vert_spv_len = 1504;$/;"	v	typeref:typename:unsigned int
+clean	Makefile	/^clean :$/;"	t
+cleanup	main.cpp	/^  auto cleanup() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+cleanup_swapchain	main.cpp	/^  auto cleanup_swapchain() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+command_buffers	main.cpp	/^  std::vector<vk::CommandBuffer> command_buffers;$/;"	m	struct:window_and_vulkan_state	typeref:typename:std::vector<vk::CommandBuffer>	file:
+command_pool	main.cpp	/^  vk::CommandPool command_pool;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::CommandPool	file:
+create_command_buffers	main.cpp	/^  auto create_command_buffers() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_command_pool	main.cpp	/^  auto create_command_pool() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_device_and_queues	main.cpp	/^  auto create_device_and_queues() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_framebuffers	main.cpp	/^  auto create_framebuffers() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_graphics_pipeline	main.cpp	/^  auto create_graphics_pipeline() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_instance	main.cpp	/^  auto create_instance() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_physical_device	main.cpp	/^  auto create_physical_device() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_renderpass	main.cpp	/^  auto create_renderpass() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_swapchain	main.cpp	/^  auto create_swapchain() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+create_sync_objects	main.cpp	/^  auto create_sync_objects() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+current_in_flight_frame	main.cpp	/^  uint32_t current_in_flight_frame = 0;$/;"	m	struct:window_and_vulkan_state	typeref:typename:uint32_t	file:
+device	main.cpp	/^  vk::Device device;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::Device	file:
+draw_frame	main.cpp	/^  auto draw_frame() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+graphics_pipeline	main.cpp	/^  vk::Pipeline graphics_pipeline;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::Pipeline	file:
+height	main.cpp	/^    int height = 450;$/;"	m	struct:window_and_vulkan_state::__anon3b5b11db0108	typeref:typename:int	file:
+image_available_semaphores	main.cpp	/^  std::vector<vk::Semaphore> image_available_semaphores;$/;"	m	struct:window_and_vulkan_state	typeref:typename:std::vector<vk::Semaphore>	file:
+in_flight_fences	main.cpp	/^  std::vector<vk::Fence> in_flight_fences;$/;"	m	struct:window_and_vulkan_state	typeref:typename:std::vector<vk::Fence>	file:
+init	main.cpp	/^  auto init() -> auto{ init_vulkan(); }$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+init_vulkan	main.cpp	/^  auto init_vulkan() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+instance	main.cpp	/^  vk::Instance instance;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::Instance	file:
+main	main.cpp	/^auto main() -> int {$/;"	f	typeref:typename:int
+main.o	Makefile	/^main.o : shaders.h$/;"	t
+physical_device	main.cpp	/^  vk::PhysicalDevice physical_device;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::PhysicalDevice	file:
+pipeline_layout	main.cpp	/^  vk::PipelineLayout pipeline_layout;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::PipelineLayout	file:
+queue	main.cpp	/^  vk::Queue queue;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::Queue	file:
+queue_family_index	main.cpp	/^  std::optional<uint32_t> queue_family_index = std::nullopt;$/;"	m	struct:window_and_vulkan_state	typeref:typename:std::optional<uint32_t>	file:
+record_command_buffer	main.cpp	/^  auto record_command_buffer(vk::CommandBuffer command_buffer,$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+recreate_swapchain	main.cpp	/^  auto recreate_swapchain() {$/;"	f	struct:window_and_vulkan_state	typeref:typename:auto	file:
+render_finished_semaphores	main.cpp	/^  std::vector<vk::Semaphore> render_finished_semaphores;$/;"	m	struct:window_and_vulkan_state	typeref:typename:std::vector<vk::Semaphore>	file:
+renderpass	main.cpp	/^  vk::RenderPass renderpass;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::RenderPass	file:
+run	Makefile	/^run : $(EXE)$/;"	t
+shaders.h	Makefile	/^shaders.h : $(SPVS)$/;"	t
+surface	main.cpp	/^  vk::SurfaceKHR surface;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::SurfaceKHR	file:
+swapchain	main.cpp	/^  vk::SwapchainKHR swapchain;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::SwapchainKHR	file:
+swapchain_framebuffers	main.cpp	/^  std::vector<vk::Framebuffer> swapchain_framebuffers;$/;"	m	struct:window_and_vulkan_state	typeref:typename:std::vector<vk::Framebuffer>	file:
+swapchain_image_extent	main.cpp	/^  vk::Extent2D swapchain_image_extent;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::Extent2D	file:
+swapchain_image_format	main.cpp	/^  vk::Format swapchain_image_format;$/;"	m	struct:window_and_vulkan_state	typeref:typename:vk::Format	file:
+swapchain_image_views	main.cpp	/^  std::vector<vk::ImageView> swapchain_image_views;$/;"	m	struct:window_and_vulkan_state	typeref:typename:std::vector<vk::ImageView>	file:
+swapchain_images	main.cpp	/^  std::vector<vk::Image> swapchain_images;$/;"	m	struct:window_and_vulkan_state	typeref:typename:std::vector<vk::Image>	file:
+width	main.cpp	/^    int width = 800;$/;"	m	struct:window_and_vulkan_state::__anon3b5b11db0108	typeref:typename:int	file:
+window	main.cpp	/^  SDL_Window *window;$/;"	m	struct:window_and_vulkan_state	typeref:typename:SDL_Window *	file:
+window_and_vulkan_state	main.cpp	/^struct window_and_vulkan_state {$/;"	s	file:
+window_dimensions	main.cpp	/^  } window_dimensions;$/;"	m	struct:window_and_vulkan_state	typeref:struct:window_and_vulkan_state::__anon3b5b11db0108	file:

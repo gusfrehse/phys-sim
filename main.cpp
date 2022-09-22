@@ -62,10 +62,16 @@ struct vertex {
     }
 };
 
-std::vector<vertex> vertices = {
-    {{0.0f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}}
+const std::vector<vertex> vertices = {
+    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+};
+
+
+const std::vector<uint16_t> indices = {
+    0, 1, 2, 2, 3, 0
 };
 
 struct window_and_vulkan_state {
@@ -109,6 +115,9 @@ struct window_and_vulkan_state {
   vk::Buffer vertex_buffer;
   vk::DeviceMemory vertex_buffer_memory;
 
+  vk::Buffer index_buffer;
+  vk::DeviceMemory index_buffer_memory;
+
   uint32_t current_in_flight_frame = 0;
 
   auto record_command_buffer(vk::CommandBuffer command_buffer,
@@ -148,7 +157,9 @@ struct window_and_vulkan_state {
     
     command_buffer.bindVertexBuffers(0, {vertex_buffer}, {0});
 
-    command_buffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+    command_buffer.bindIndexBuffer(index_buffer, 0, vk::IndexType::eUint16);
+
+    command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
     command_buffer.endRenderPass();
 
@@ -260,7 +271,6 @@ struct window_and_vulkan_state {
   auto create_vertex_buffers() {
       vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
 
-
       // create staging buffer and memory
       auto [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size,
               vk::BufferUsageFlagBits::eTransferSrc,
@@ -285,6 +295,38 @@ struct window_and_vulkan_state {
                   vk::MemoryPropertyFlagBits::eDeviceLocal);
 
       copy_buffer(staging_buffer, vertex_buffer, buffer_size);
+
+      device.destroy(staging_buffer);
+      device.free(staging_buffer_memory);
+  }
+
+  auto create_index_buffers() {
+      vk::DeviceSize buffer_size = sizeof(indices[0]) * indices.size();
+
+      // create staging buffer and memory
+      auto [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size,
+              vk::BufferUsageFlagBits::eTransferSrc,
+              vk::MemoryPropertyFlagBits::eHostVisible |
+              vk::MemoryPropertyFlagBits::eHostCoherent);
+
+
+      // copy data to staging buffer
+      void* data = device.mapMemory(staging_buffer_memory, 0, buffer_size);
+
+      memcpy(data, indices.data(), (size_t) buffer_size);
+
+      device.unmapMemory(staging_buffer_memory);
+
+
+      // create vertex buffer
+      std::tie(index_buffer, index_buffer_memory) =
+          create_buffer(
+                  buffer_size,
+                  vk::BufferUsageFlagBits::eIndexBuffer |
+                  vk::BufferUsageFlagBits::eTransferDst,
+                  vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+      copy_buffer(staging_buffer, index_buffer, buffer_size);
 
       device.destroy(staging_buffer);
       device.free(staging_buffer_memory);
@@ -742,6 +784,8 @@ struct window_and_vulkan_state {
 
     create_vertex_buffers();
 
+    create_index_buffers();
+
     create_command_buffers();
 
     create_sync_objects();
@@ -754,6 +798,9 @@ struct window_and_vulkan_state {
 
     device.destroy(vertex_buffer);
     device.free(vertex_buffer_memory);
+
+    device.destroy(index_buffer);
+    device.free(index_buffer_memory);
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       device.destroy(image_available_semaphores[i]);

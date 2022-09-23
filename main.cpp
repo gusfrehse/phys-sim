@@ -8,18 +8,26 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
+#include <glm/ext/matrix_clip_space.hpp>
+#include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/vector_float3.hpp>
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
 #include <limits>
 #include <optional>
+#include <chrono>
 
+#include <vector>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_enums.hpp>
 #include <vulkan/vulkan_handles.hpp>
 #include <vulkan/vulkan_structs.hpp>
 
+#define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include "shaders.h"
 
@@ -31,47 +39,54 @@
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
+struct uniform_buffer_object {
+  glm::mat4 model;
+  glm::mat4 view;
+  glm::mat4 proj;
+};
+
 struct vertex {
-    glm::vec2 pos;
-    glm::vec3 color;
+  glm::vec2 pos;
+  glm::vec3 color;
 
-    static std::array<vk::VertexInputAttributeDescription, 2> get_attribute_descriptions() {
-        std::array<vk::VertexInputAttributeDescription, 2> attrib_description{};
+  static std::array<vk::VertexInputAttributeDescription, 2>
+  get_attribute_descriptions() {
+    std::array<vk::VertexInputAttributeDescription, 2> attrib_description{};
 
-        attrib_description[0].binding = 0;
-        attrib_description[0].location = 0;
-        attrib_description[0].format = vk::Format::eR32G32Sfloat;
-        attrib_description[0].offset = offsetof(vertex, pos);
+    attrib_description[0].binding = 0;
+    attrib_description[0].location = 0;
+    attrib_description[0].format = vk::Format::eR32G32Sfloat;
+    attrib_description[0].offset = offsetof(vertex, pos);
 
-        attrib_description[1].binding = 0;
-        attrib_description[1].location = 1;
-        attrib_description[1].format = vk::Format::eR32G32B32Sfloat;
-        attrib_description[1].offset = offsetof(vertex, color);
+    attrib_description[1].binding = 0;
+    attrib_description[1].location = 1;
+    attrib_description[1].format = vk::Format::eR32G32B32Sfloat;
+    attrib_description[1].offset = offsetof(vertex, color);
 
-        return attrib_description;
-    }
+    return attrib_description;
+  }
 
 
-    static vk::VertexInputBindingDescription getBindingDescription() {
-        vk::VertexInputBindingDescription binding_description{};
-        binding_description.binding = 0;
-        binding_description.stride = sizeof(vertex);
-        binding_description.inputRate = vk::VertexInputRate::eVertex;
+  static vk::VertexInputBindingDescription getBindingDescription() {
+    vk::VertexInputBindingDescription binding_description{};
+    binding_description.binding = 0;
+    binding_description.stride = sizeof(vertex);
+    binding_description.inputRate = vk::VertexInputRate::eVertex;
 
-        return binding_description;
-    }
+    return binding_description;
+  }
 };
 
 const std::vector<vertex> vertices = {
-    {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-    {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-    {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-    {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+  {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+  {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+  {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+  {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
 };
 
 
 const std::vector<uint16_t> indices = {
-    0, 1, 2, 2, 3, 0
+  0, 1, 2, 2, 3, 0
 };
 
 struct window_and_vulkan_state {
@@ -100,6 +115,7 @@ struct window_and_vulkan_state {
   vk::Queue queue;
 
   vk::RenderPass renderpass;
+  vk::DescriptorSetLayout descriptor_set_layout;
   vk::PipelineLayout pipeline_layout;
   vk::Pipeline graphics_pipeline;
 
@@ -118,7 +134,14 @@ struct window_and_vulkan_state {
   vk::Buffer index_buffer;
   vk::DeviceMemory index_buffer_memory;
 
-  uint32_t current_in_flight_frame = 0;
+  std::vector<vk::Buffer> uniform_buffers;
+  std::vector<vk::DeviceMemory> uniform_buffers_memory;
+
+  vk::DescriptorPool descriptor_pool;
+
+  std::vector<vk::DescriptorSet> descriptor_sets;
+
+  uint32_t current_frame = 0;
 
   auto record_command_buffer(vk::CommandBuffer command_buffer,
                              int image_index) {
@@ -159,6 +182,12 @@ struct window_and_vulkan_state {
 
     command_buffer.bindIndexBuffer(index_buffer, 0, vk::IndexType::eUint16);
 
+    command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                      pipeline_layout,
+                                      0,
+                                      {descriptor_sets[current_frame]},
+                                      {});
+
     command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
     command_buffer.endRenderPass();
@@ -197,139 +226,202 @@ struct window_and_vulkan_state {
       vk::MemoryRequirements mem_requirements =
           device.getBufferMemoryRequirements(buffer);
 
-      auto find_memory_type = [this](uint32_t type_filter,
-              vk::MemoryPropertyFlags properties){
-          vk::PhysicalDeviceMemoryProperties mem_properties =
-              physical_device.getMemoryProperties();
+    auto find_memory_type = [this](uint32_t type_filter,
+                                   vk::MemoryPropertyFlags properties){
+        vk::PhysicalDeviceMemoryProperties mem_properties =
+          physical_device.getMemoryProperties();
 
-          for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
-              if (type_filter & (1 << i)) {
-                  if ((mem_properties.memoryTypes[i].propertyFlags & properties)
-                    == properties) {
-                    return i;
-                  }
-              }
+        for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+          if (type_filter & (1 << i)) {
+            if ((mem_properties.memoryTypes[i].propertyFlags & properties)
+              == properties) {
+              return i;
+            }
           }
+        }
 
-          fprintf(stderr, "ERROR: failed to find memory type\n");
-          exit(1);
-      };
+        fprintf(stderr, "ERROR: failed to find memory type\n");
+        exit(1);
+    };
 
-      vk::MemoryAllocateInfo alloc_info{};
-      alloc_info.allocationSize = mem_requirements.size;
-      alloc_info.memoryTypeIndex =
-          find_memory_type(mem_requirements.memoryTypeBits, properties);
+    vk::MemoryAllocateInfo alloc_info{};
+    alloc_info.allocationSize = mem_requirements.size;
+    alloc_info.memoryTypeIndex =
+      find_memory_type(mem_requirements.memoryTypeBits, properties);
 
-      buffer_memory = device.allocateMemory(alloc_info);
+    buffer_memory = device.allocateMemory(alloc_info);
 
-      device.bindBufferMemory(buffer, buffer_memory, 0);
+    device.bindBufferMemory(buffer, buffer_memory, 0);
 
-      return {buffer, buffer_memory};
+    return {buffer, buffer_memory};
   }
 
   auto copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) {
-      // create a command buffer that will be used only once to copy memory from
-      // (in this specific case) from the src buffer to dst buffer
+    // create a command buffer that will be used only once to copy memory from
+    // (in this specific case) from the src buffer to dst buffer
 
 
-      vk::CommandBufferAllocateInfo alloc_info{};
-      alloc_info.level = vk::CommandBufferLevel::ePrimary;
-      alloc_info.commandPool = alloc_command_pool;
-      alloc_info.commandBufferCount = 1;
+    vk::CommandBufferAllocateInfo alloc_info{};
+    alloc_info.level = vk::CommandBufferLevel::ePrimary;
+    alloc_info.commandPool = alloc_command_pool;
+    alloc_info.commandBufferCount = 1;
 
-      vk::CommandBuffer command_buffer =
-          device.allocateCommandBuffers(alloc_info)[0];
+    vk::CommandBuffer command_buffer =
+      device.allocateCommandBuffers(alloc_info)[0];
 
-      // record cmdbuffer
-      vk::CommandBufferBeginInfo begin_info(
-              vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    // record cmdbuffer
+    vk::CommandBufferBeginInfo begin_info(
+      vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 
-      command_buffer.begin(begin_info);
+    command_buffer.begin(begin_info);
 
-      vk::BufferCopy copy_region{};
-      copy_region.srcOffset = 0;
-      copy_region.dstOffset = 0;
-      copy_region.size = size;
+    vk::BufferCopy copy_region{};
+    copy_region.srcOffset = 0;
+    copy_region.dstOffset = 0;
+    copy_region.size = size;
 
-      command_buffer.copyBuffer(src, dst, {copy_region});
+    command_buffer.copyBuffer(src, dst, {copy_region});
 
-      command_buffer.end();
+    command_buffer.end();
 
-      // submit command buffer
-      vk::SubmitInfo submit_info{};
-      submit_info.commandBufferCount = 1;
-      submit_info.pCommandBuffers = &command_buffer;
+    // submit command buffer
+    vk::SubmitInfo submit_info{};
+    submit_info.commandBufferCount = 1;
+    submit_info.pCommandBuffers = &command_buffer;
 
-      queue.submit({submit_info});
+    queue.submit({submit_info});
 
-      // wait
-      queue.waitIdle();
+    // wait
+    queue.waitIdle();
 
-      device.freeCommandBuffers(alloc_command_pool, {command_buffer});
+    device.freeCommandBuffers(alloc_command_pool, {command_buffer});
   }
 
   auto create_vertex_buffers() {
-      vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
+    vk::DeviceSize buffer_size = sizeof(vertices[0]) * vertices.size();
 
-      // create staging buffer and memory
-      auto [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size,
-              vk::BufferUsageFlagBits::eTransferSrc,
-              vk::MemoryPropertyFlagBits::eHostVisible |
-              vk::MemoryPropertyFlagBits::eHostCoherent);
-
-
-      // copy data to staging buffer
-      void* data = device.mapMemory(staging_buffer_memory, 0, buffer_size);
-
-      memcpy(data, vertices.data(), (size_t) buffer_size);
-
-      device.unmapMemory(staging_buffer_memory);
+    // create staging buffer and memory
+    auto [staging_buffer, staging_buffer_memory] =
+      create_buffer(buffer_size,
+                    vk::BufferUsageFlagBits::eTransferSrc,
+                    vk::MemoryPropertyFlagBits::eHostVisible |
+                    vk::MemoryPropertyFlagBits::eHostCoherent);
 
 
-      // create vertex buffer
-      std::tie(vertex_buffer, vertex_buffer_memory) =
-          create_buffer(
-                  buffer_size,
-                  vk::BufferUsageFlagBits::eVertexBuffer |
-                  vk::BufferUsageFlagBits::eTransferDst,
-                  vk::MemoryPropertyFlagBits::eDeviceLocal);
+    // copy data to staging buffer
+    void* data = device.mapMemory(staging_buffer_memory, 0, buffer_size);
 
-      copy_buffer(staging_buffer, vertex_buffer, buffer_size);
+    memcpy(data, vertices.data(), (size_t) buffer_size);
 
-      device.destroy(staging_buffer);
-      device.free(staging_buffer_memory);
+    device.unmapMemory(staging_buffer_memory);
+
+
+    // create vertex buffer
+    std::tie(vertex_buffer, vertex_buffer_memory) =
+      create_buffer(
+        buffer_size,
+        vk::BufferUsageFlagBits::eVertexBuffer |
+        vk::BufferUsageFlagBits::eTransferDst,
+        vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    copy_buffer(staging_buffer, vertex_buffer, buffer_size);
+
+    device.destroy(staging_buffer);
+    device.free(staging_buffer_memory);
   }
 
   auto create_index_buffers() {
-      vk::DeviceSize buffer_size = sizeof(indices[0]) * indices.size();
+    vk::DeviceSize buffer_size = sizeof(indices[0]) * indices.size();
 
-      // create staging buffer and memory
-      auto [staging_buffer, staging_buffer_memory] = create_buffer(buffer_size,
-              vk::BufferUsageFlagBits::eTransferSrc,
-              vk::MemoryPropertyFlagBits::eHostVisible |
-              vk::MemoryPropertyFlagBits::eHostCoherent);
-
-
-      // copy data to staging buffer
-      void* data = device.mapMemory(staging_buffer_memory, 0, buffer_size);
-
-      memcpy(data, indices.data(), (size_t) buffer_size);
-
-      device.unmapMemory(staging_buffer_memory);
+    // create staging buffer and memory
+    auto [staging_buffer, staging_buffer_memory] =
+      create_buffer(buffer_size,
+                    vk::BufferUsageFlagBits::eTransferSrc,
+                    vk::MemoryPropertyFlagBits::eHostVisible |
+                    vk::MemoryPropertyFlagBits::eHostCoherent);
 
 
-      // create vertex buffer
-      std::tie(index_buffer, index_buffer_memory) =
-          create_buffer(
-                  buffer_size,
-                  vk::BufferUsageFlagBits::eIndexBuffer |
-                  vk::BufferUsageFlagBits::eTransferDst,
-                  vk::MemoryPropertyFlagBits::eDeviceLocal);
+    // copy data to staging buffer
+    void* data = device.mapMemory(staging_buffer_memory, 0, buffer_size);
 
-      copy_buffer(staging_buffer, index_buffer, buffer_size);
+    memcpy(data, indices.data(), (size_t) buffer_size);
 
-      device.destroy(staging_buffer);
-      device.free(staging_buffer_memory);
+    device.unmapMemory(staging_buffer_memory);
+
+
+    // create vertex buffer
+    std::tie(index_buffer, index_buffer_memory) =
+      create_buffer(
+        buffer_size,
+        vk::BufferUsageFlagBits::eIndexBuffer |
+        vk::BufferUsageFlagBits::eTransferDst,
+        vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    copy_buffer(staging_buffer, index_buffer, buffer_size);
+
+    device.destroy(staging_buffer);
+    device.free(staging_buffer_memory);
+  }
+
+  auto create_uniform_buffers() {
+    vk::DeviceSize buffer_size = sizeof(uniform_buffer_object);
+
+    uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+    uniform_buffers_memory.resize(MAX_FRAMES_IN_FLIGHT);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      std::tie(uniform_buffers[i], uniform_buffers_memory[i]) = create_buffer(
+          buffer_size,
+          vk::BufferUsageFlagBits::eUniformBuffer,
+          vk::MemoryPropertyFlagBits::eHostVisible |
+          vk::MemoryPropertyFlagBits::eHostCoherent);
+    }
+  }
+
+  auto create_descriptor_pool() {
+    vk::DescriptorPoolSize pool_size{};
+    pool_size.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    vk::DescriptorPoolCreateInfo pool_info{};
+    pool_info.poolSizeCount = 1;
+    pool_info.pPoolSizes = &pool_size;
+    pool_info.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    descriptor_pool = device.createDescriptorPool(pool_info);
+  }
+
+  auto create_descriptor_sets() {
+    std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT,
+                                                 descriptor_set_layout);
+
+    vk::DescriptorSetAllocateInfo alloc_info{};
+    alloc_info.descriptorPool = descriptor_pool;
+    alloc_info.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    alloc_info.pSetLayouts = layouts.data();
+
+    printf("OLOLOLOaslkdfjalskjdfklsjdflkaj\n");
+    descriptor_sets = device.allocateDescriptorSets(alloc_info);
+    printf("ALALALAaslkdfjalskjdfklsjdflkaj\n");
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      vk::DescriptorBufferInfo buffer_info{};
+      buffer_info.buffer = uniform_buffers[i];
+      buffer_info.offset = 0;
+      buffer_info.range = sizeof(uniform_buffer_object);
+
+      vk::WriteDescriptorSet descriptor_write{};
+      descriptor_write.dstSet = descriptor_sets[i];
+      descriptor_write.dstBinding = 0;
+      descriptor_write.dstArrayElement = 0;
+      descriptor_write.descriptorType = vk::DescriptorType::eUniformBuffer;
+      descriptor_write.descriptorCount = 1;
+      descriptor_write.pBufferInfo = &buffer_info;
+      descriptor_write.pImageInfo = nullptr;
+      descriptor_write.pTexelBufferView = nullptr;
+
+      device.updateDescriptorSets({descriptor_write}, {});
+
+    }
   }
 
   auto create_command_buffers() {
@@ -393,6 +485,21 @@ struct window_and_vulkan_state {
     renderpass = device.createRenderPass(renderpass_info);
   }
 
+  auto create_descriptor_set_layout() {
+    vk::DescriptorSetLayoutBinding ubo_layout_binding{};
+    ubo_layout_binding.binding = 0;
+    ubo_layout_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
+    ubo_layout_binding.descriptorCount = 1;
+    ubo_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    ubo_layout_binding.pImmutableSamplers = nullptr;
+
+    vk::DescriptorSetLayoutCreateInfo layout_info{};
+    layout_info.bindingCount = 1;
+    layout_info.pBindings = &ubo_layout_binding;
+
+    descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
+  }
+
   auto create_graphics_pipeline() {
     // create fragment shader module
     vk::ShaderModuleCreateInfo frag_module_info{};
@@ -430,7 +537,8 @@ struct window_and_vulkan_state {
     vk::PipelineVertexInputStateCreateInfo vert_input_info{};
     vert_input_info.vertexBindingDescriptionCount = 1;
     vert_input_info.pVertexBindingDescriptions = &binding_desc;
-    vert_input_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(attrib_desc.size());
+    vert_input_info.vertexAttributeDescriptionCount =
+      static_cast<uint32_t>(attrib_desc.size());
     vert_input_info.pVertexAttributeDescriptions = attrib_desc.data();
 
     // topology
@@ -438,8 +546,10 @@ struct window_and_vulkan_state {
     input_assembly.topology = vk::PrimitiveTopology::eTriangleList;
     input_assembly.primitiveRestartEnable = false;
 
-    std::vector<vk::DynamicState> dynamic_states = {vk::DynamicState::eViewport,
-                                                    vk::DynamicState::eScissor};
+    std::vector<vk::DynamicState> dynamic_states = {
+      vk::DynamicState::eViewport,
+      vk::DynamicState::eScissor
+    };
 
     vk::PipelineDynamicStateCreateInfo dynamic_state_info{};
     dynamic_state_info.dynamicStateCount = dynamic_states.size();
@@ -456,7 +566,7 @@ struct window_and_vulkan_state {
     rasterizer_info.polygonMode = vk::PolygonMode::eFill;
     rasterizer_info.lineWidth = 1.0f;
     rasterizer_info.cullMode = vk::CullModeFlagBits::eBack;
-    rasterizer_info.frontFace = vk::FrontFace::eClockwise;
+    rasterizer_info.frontFace = vk::FrontFace::eCounterClockwise;
     rasterizer_info.depthBiasEnable = false;
 
     vk::PipelineMultisampleStateCreateInfo multisample_info{};
@@ -479,6 +589,8 @@ struct window_and_vulkan_state {
     color_blend_info.pAttachments = &color_blend_attachment_state;
 
     vk::PipelineLayoutCreateInfo pipeline_layout_info{};
+    pipeline_layout_info.setLayoutCount = 1;
+    pipeline_layout_info.pSetLayouts = &descriptor_set_layout;
 
     pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
 
@@ -540,7 +652,7 @@ struct window_and_vulkan_state {
     // current is equal to max_int and only then we actually change it???
     vk::Extent2D chosen_extent = surface_capabilities.currentExtent;
     if (surface_capabilities.currentExtent.width ==
-        std::numeric_limits<uint32_t>::max()) {
+      std::numeric_limits<uint32_t>::max()) {
       SDL_GL_GetDrawableSize(window, (int *)&chosen_extent.width,
                              (int *)&chosen_extent.height);
 
@@ -573,13 +685,12 @@ struct window_and_vulkan_state {
     swapchain_create_info.imageArrayLayers = 1;
 
     swapchain_create_info.imageUsage = vk::ImageUsageFlagBits::eColorAttachment;
-    swapchain_create_info.imageSharingMode =
-        vk::SharingMode::eExclusive; // change this for more queue families
+    swapchain_create_info.imageSharingMode = vk::SharingMode::eExclusive; // change this for more queue families
     swapchain_create_info.queueFamilyIndexCount = 0;
     swapchain_create_info.pQueueFamilyIndices = nullptr;
     swapchain_create_info.preTransform = surface_capabilities.currentTransform;
     swapchain_create_info.compositeAlpha =
-        vk::CompositeAlphaFlagBitsKHR::eOpaque;
+      vk::CompositeAlphaFlagBitsKHR::eOpaque;
     swapchain_create_info.presentMode = chosen_present_mode;
     swapchain_create_info.clipped = true;
 
@@ -776,6 +887,8 @@ struct window_and_vulkan_state {
 
     create_renderpass();
 
+    create_descriptor_set_layout();
+
     create_graphics_pipeline();
 
     create_framebuffers();
@@ -785,6 +898,12 @@ struct window_and_vulkan_state {
     create_vertex_buffers();
 
     create_index_buffers();
+
+    create_uniform_buffers();
+
+    create_descriptor_pool();
+
+    create_descriptor_sets();
 
     create_command_buffers();
 
@@ -801,6 +920,15 @@ struct window_and_vulkan_state {
 
     device.destroy(index_buffer);
     device.free(index_buffer_memory);
+
+    for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+      device.destroy(uniform_buffers[i]);
+      device.free(uniform_buffers_memory[i]);
+    }
+
+    device.destroy(descriptor_pool);
+
+    device.destroy(descriptor_set_layout);
 
     for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       device.destroy(image_available_semaphores[i]);
@@ -822,23 +950,52 @@ struct window_and_vulkan_state {
     SDL_DestroyWindow(window);
   }
 
+  auto update_uniform_buffer(uint32_t current_image) {
+    static auto start_time = std::chrono::high_resolution_clock::now();
+
+    auto current_time = std::chrono::high_resolution_clock::now();
+
+    float time = std::chrono::duration<float, std::chrono::seconds::period>(
+        current_time - start_time).count();
+
+    uniform_buffer_object ubo;
+    ubo.model = glm::rotate(glm::mat4(1.0f),
+                            time * glm::radians(90.0f),
+                            glm::vec3(0.0f, 0.0f, 1.0f));
+
+    ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+                           glm::vec3(0.0f),
+                           glm::vec3(0.0f, 0.0f, 1.0f));
+
+    ubo.proj = glm::perspective(glm::radians(45.0f), swapchain_image_extent.width / (float) swapchain_image_extent.height, 0.1f, 10.0f);
+
+    ubo.proj[1][1] *= -1;
+
+    void *data;
+    data = device.mapMemory(uniform_buffers_memory[current_image], 0, sizeof(ubo));
+
+    memcpy(data, &ubo, sizeof(ubo));
+
+    device.unmapMemory(uniform_buffers_memory[current_image]);
+  }
+
   auto init() -> auto{ init_vulkan(); }
 
   auto draw_frame() {
     // wait for in flight fences (whatever that means...)
-    if (device.waitForFences({in_flight_fences[current_in_flight_frame]}, true,
+    if (device.waitForFences({in_flight_fences[current_frame]}, true,
                              UINT64_MAX) != vk::Result::eSuccess) {
       printf("wait for fence failed ... wtf\n");
       exit(123);
     }
 
-    device.resetFences({in_flight_fences[current_in_flight_frame]});
+    device.resetFences({in_flight_fences[current_frame]});
 
     uint32_t next_image;
     try {
       auto next_image_result = device.acquireNextImageKHR(
           swapchain, UINT64_MAX,
-          image_available_semaphores[current_in_flight_frame], nullptr);
+          image_available_semaphores[current_frame], nullptr);
 
       next_image = next_image_result.value;
     } catch (vk::OutOfDateKHRError const &e) {
@@ -848,13 +1005,15 @@ struct window_and_vulkan_state {
       return;
     }
 
-    command_buffers[current_in_flight_frame].reset();
-    record_command_buffer(command_buffers[current_in_flight_frame], next_image);
+    update_uniform_buffer(current_frame);
+
+    command_buffers[current_frame].reset();
+    record_command_buffer(command_buffers[current_frame], next_image);
 
     vk::SubmitInfo submit_info{};
 
     vk::Semaphore wait_semaphores[] = {
-        image_available_semaphores[current_in_flight_frame]};
+        image_available_semaphores[current_frame]};
     vk::PipelineStageFlags wait_stages[] = {
         vk::PipelineStageFlagBits::eColorAttachmentOutput};
 
@@ -862,14 +1021,14 @@ struct window_and_vulkan_state {
     submit_info.pWaitSemaphores = wait_semaphores;
     submit_info.pWaitDstStageMask = wait_stages;
     submit_info.commandBufferCount = 1;
-    submit_info.pCommandBuffers = &command_buffers[current_in_flight_frame];
+    submit_info.pCommandBuffers = &command_buffers[current_frame];
 
     vk::Semaphore signal_semaphores[] = {
-        render_finished_semaphores[current_in_flight_frame]};
+        render_finished_semaphores[current_frame]};
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
 
-    queue.submit({submit_info}, in_flight_fences[current_in_flight_frame]);
+    queue.submit({submit_info}, in_flight_fences[current_frame]);
 
     vk::PresentInfoKHR present_info{};
     present_info.waitSemaphoreCount = 1;
@@ -897,8 +1056,8 @@ struct window_and_vulkan_state {
       return;
     }
 
-    current_in_flight_frame =
-        (current_in_flight_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+    current_frame =
+        (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
   }
 };
 
@@ -922,4 +1081,4 @@ auto main() -> int {
   state.cleanup();
 }
 
-/* vim: set sts=4 ts=4 sw=4 et: */
+/* vim: set sts=2 ts=2 sw=2 et cc=81: */

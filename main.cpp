@@ -378,8 +378,25 @@ struct window_and_vulkan_state {
     }
   }
 
+  auto create_descriptor_set_layout() {
+    vk::DescriptorSetLayoutBinding ubo_layout_binding{};
+    ubo_layout_binding.binding = 0;
+    ubo_layout_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
+    ubo_layout_binding.descriptorCount = 1;
+    ubo_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
+    ubo_layout_binding.pImmutableSamplers = nullptr;
+
+    vk::DescriptorSetLayoutCreateInfo layout_info{};
+    layout_info.bindingCount = 1;
+    layout_info.pBindings = &ubo_layout_binding;
+
+    descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
+  }
+
+
   auto create_descriptor_pool() {
     vk::DescriptorPoolSize pool_size{};
+    pool_size.type = vk::DescriptorType::eUniformBuffer;
     pool_size.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
     vk::DescriptorPoolCreateInfo pool_info{};
@@ -399,9 +416,7 @@ struct window_and_vulkan_state {
     alloc_info.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
     alloc_info.pSetLayouts = layouts.data();
 
-    printf("OLOLOLOaslkdfjalskjdfklsjdflkaj\n");
     descriptor_sets = device.allocateDescriptorSets(alloc_info);
-    printf("ALALALAaslkdfjalskjdfklsjdflkaj\n");
 
     for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
       vk::DescriptorBufferInfo buffer_info{};
@@ -483,21 +498,6 @@ struct window_and_vulkan_state {
     renderpass_info.pDependencies = &dependency;
 
     renderpass = device.createRenderPass(renderpass_info);
-  }
-
-  auto create_descriptor_set_layout() {
-    vk::DescriptorSetLayoutBinding ubo_layout_binding{};
-    ubo_layout_binding.binding = 0;
-    ubo_layout_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
-    ubo_layout_binding.descriptorCount = 1;
-    ubo_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
-    ubo_layout_binding.pImmutableSamplers = nullptr;
-
-    vk::DescriptorSetLayoutCreateInfo layout_info{};
-    layout_info.bindingCount = 1;
-    layout_info.pBindings = &ubo_layout_binding;
-
-    descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
   }
 
   auto create_graphics_pipeline() {

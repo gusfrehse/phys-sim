@@ -31,11 +31,17 @@
 
 #include "shaders.h"
 
-#define CHECK_SDL(x, pred)                                                     \
-  if (x pred) {                                                                \
-    SDL_Log("SDL_ERROR: " #x ": %s", SDL_GetError());                          \
-    exit(1);                                                                   \
-  }
+#define CHECK_SDL(x, pred)                                                       \
+  do {                                                                           \
+    if (x pred) {                                                                \
+      fprintf(stderr, "%s %s:%d, sdl check failed:\n",                           \
+              __PRETTY_FUNCTION__,                                               \
+              __FILE__,                                                          \
+              __LINE__);                                                         \
+      SDL_Log("SDL_ERROR: " #x ": %s", SDL_GetError());                          \
+      exit(1);                                                                   \
+    }                                                                            \
+  } while(0);
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 

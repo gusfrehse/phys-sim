@@ -58,10 +58,11 @@ struct uniform_buffer_object {
 struct vertex {
   glm::vec2 pos;
   glm::vec3 color;
+  glm::vec2 tex_coord;
 
-  static std::array<vk::VertexInputAttributeDescription, 2>
+  static std::array<vk::VertexInputAttributeDescription, 3>
   get_attribute_descriptions() {
-    std::array<vk::VertexInputAttributeDescription, 2> attrib_description{};
+    std::array<vk::VertexInputAttributeDescription, 3> attrib_description{};
 
     attrib_description[0].binding = 0;
     attrib_description[0].location = 0;
@@ -72,6 +73,11 @@ struct vertex {
     attrib_description[1].location = 1;
     attrib_description[1].format = vk::Format::eR32G32B32Sfloat;
     attrib_description[1].offset = offsetof(vertex, color);
+
+    attrib_description[2].binding = 0;
+    attrib_description[2].location = 2;
+    attrib_description[2].format = vk::Format::eR32G32Sfloat;
+    attrib_description[2].offset = offsetof(vertex, tex_coord);
 
     return attrib_description;
   }
@@ -88,12 +94,11 @@ struct vertex {
 };
 
 const std::vector<vertex> vertices = {
-  {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-  {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-  {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-  {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+  {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+  {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+  {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+  {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 };
-
 
 const std::vector<uint16_t> indices = {
   0, 1, 2, 2, 3, 0
@@ -153,6 +158,8 @@ struct window_and_vulkan_state {
 
   vk::Image texture_image;
   vk::DeviceMemory texture_image_memory;
+  vk::ImageView texture_image_view;
+  vk::Sampler texture_sampler;
 
   uint32_t current_frame = 0;
 
@@ -484,22 +491,38 @@ struct window_and_vulkan_state {
     ubo_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
     ubo_layout_binding.pImmutableSamplers = nullptr;
 
+    vk::DescriptorSetLayoutBinding sampler_layout_binding{};
+    sampler_layout_binding.binding = 1;
+    sampler_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    sampler_layout_binding.descriptorCount = 1;
+    sampler_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
+    sampler_layout_binding.pImmutableSamplers = nullptr;
+
+    std::array<vk::DescriptorSetLayoutBinding, 2> bindings = {
+      ubo_layout_binding,
+      sampler_layout_binding,
+    };
+
     vk::DescriptorSetLayoutCreateInfo layout_info{};
-    layout_info.bindingCount = 1;
-    layout_info.pBindings = &ubo_layout_binding;
+    layout_info.bindingCount = static_cast<uint32_t>(bindings.size());
+    layout_info.pBindings = bindings.data();
 
     descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
   }
 
 
   auto create_descriptor_pool() {
-    vk::DescriptorPoolSize pool_size{};
-    pool_size.type = vk::DescriptorType::eUniformBuffer;
-    pool_size.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+    std::array<vk::DescriptorPoolSize, 2> pool_sizes{};
+
+    pool_sizes[0].type = vk::DescriptorType::eUniformBuffer;
+    pool_sizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+    pool_sizes[1].type = vk::DescriptorType::eCombinedImageSampler;
+    pool_sizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
     vk::DescriptorPoolCreateInfo pool_info{};
-    pool_info.poolSizeCount = 1;
-    pool_info.pPoolSizes = &pool_size;
+    pool_info.poolSizeCount = pool_sizes.size();
+    pool_info.pPoolSizes = pool_sizes.data();
     pool_info.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
     descriptor_pool = device.createDescriptorPool(pool_info);
@@ -522,18 +545,27 @@ struct window_and_vulkan_state {
       buffer_info.offset = 0;
       buffer_info.range = sizeof(uniform_buffer_object);
 
-      vk::WriteDescriptorSet descriptor_write{};
-      descriptor_write.dstSet = descriptor_sets[i];
-      descriptor_write.dstBinding = 0;
-      descriptor_write.dstArrayElement = 0;
-      descriptor_write.descriptorType = vk::DescriptorType::eUniformBuffer;
-      descriptor_write.descriptorCount = 1;
-      descriptor_write.pBufferInfo = &buffer_info;
-      descriptor_write.pImageInfo = nullptr;
-      descriptor_write.pTexelBufferView = nullptr;
+      vk::DescriptorImageInfo image_info{};
+      image_info.imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+      image_info.imageView = texture_image_view;
+      image_info.sampler = texture_sampler;
 
-      device.updateDescriptorSets({descriptor_write}, {});
+      std::array<vk::WriteDescriptorSet, 2> descriptor_writes{};
+      descriptor_writes[0].dstSet = descriptor_sets[i];
+      descriptor_writes[0].dstBinding = 0;
+      descriptor_writes[0].dstArrayElement = 0;
+      descriptor_writes[0].descriptorType = vk::DescriptorType::eUniformBuffer;
+      descriptor_writes[0].descriptorCount = 1;
+      descriptor_writes[0].pBufferInfo = &buffer_info;
 
+      descriptor_writes[1].dstSet = descriptor_sets[i];
+      descriptor_writes[1].dstBinding = 1;
+      descriptor_writes[1].dstArrayElement = 0;
+      descriptor_writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+      descriptor_writes[1].descriptorCount = 1;
+      descriptor_writes[1].pImageInfo = &image_info;
+
+      device.updateDescriptorSets(descriptor_writes, {});
     }
   }
 
@@ -801,22 +833,7 @@ struct window_and_vulkan_state {
     // create the image views
     swapchain_image_views.clear();
     for (auto &image : swapchain_images) {
-      vk::ImageViewCreateInfo image_view_create_info{};
-      image_view_create_info.setImage(image);
-      image_view_create_info.setViewType(vk::ImageViewType::e2D);
-      image_view_create_info.setFormat(swapchain_image_format);
-      image_view_create_info.setComponents(
-          {vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity,
-           vk::ComponentSwizzle::eIdentity, vk::ComponentSwizzle::eIdentity});
-      image_view_create_info.subresourceRange.setAspectMask(
-          vk::ImageAspectFlagBits::eColor);
-      image_view_create_info.subresourceRange.setBaseMipLevel(0);
-      image_view_create_info.subresourceRange.setLevelCount(1);
-      image_view_create_info.subresourceRange.setBaseArrayLayer(0);
-      image_view_create_info.subresourceRange.setLayerCount(1);
-
-      swapchain_image_views.push_back(
-          device.createImageView(image_view_create_info));
+      swapchain_image_views.push_back(create_image_view(image, swapchain_image_format));
     }
 
     //fprintf(stderr, "Created swapchain\n");
@@ -868,7 +885,8 @@ struct window_and_vulkan_state {
 
     // validation layer work
     std::vector<const char *> validation_layers = {
-        "VK_LAYER_KHRONOS_validation"};
+        "VK_LAYER_KHRONOS_validation"
+    };
 
     // SDL extensions
     unsigned int extensions_count = 0;
@@ -948,6 +966,7 @@ struct window_and_vulkan_state {
         {}, queue_family_index.value(), 1, &queue_priority);
 
     vk::PhysicalDeviceFeatures physical_device_features{};
+    physical_device_features.samplerAnisotropy = VK_TRUE;
 
     std::vector<const char *> required_device_extensions = {
         VK_KHR_SWAPCHAIN_EXTENSION_NAME};
@@ -1057,6 +1076,49 @@ struct window_and_vulkan_state {
     
   }
 
+  vk::ImageView create_image_view(vk::Image image, vk::Format format) {
+    vk::ImageViewCreateInfo view_info{};
+    view_info.image = image;
+    view_info.viewType = vk::ImageViewType::e2D;
+    view_info.format = format;
+    view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    view_info.subresourceRange.baseMipLevel = 0;
+    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.baseArrayLayer = 0;
+    view_info.subresourceRange.layerCount = 1;
+    view_info.components = vk::ComponentSwizzle::eIdentity;
+
+    return device.createImageView(view_info);
+  }
+
+  auto create_texture_image_view() {
+    texture_image_view = create_image_view(texture_image, vk::Format::eR8G8B8A8Srgb);
+  }
+
+  auto create_texture_sampler() {
+    vk::SamplerCreateInfo sampler_info{};
+    sampler_info.magFilter = vk::Filter::eLinear;
+    sampler_info.minFilter = vk::Filter::eLinear;
+    sampler_info.addressModeU = vk::SamplerAddressMode::eRepeat;
+    sampler_info.addressModeV = vk::SamplerAddressMode::eRepeat;
+    sampler_info.addressModeW = vk::SamplerAddressMode::eRepeat;
+
+    auto properties = physical_device.getProperties();
+
+    sampler_info.anisotropyEnable = VK_TRUE;
+    sampler_info.maxAnisotropy = properties.limits.maxSamplerAnisotropy;  
+    sampler_info.borderColor = vk::BorderColor::eIntOpaqueBlack;
+    sampler_info.unnormalizedCoordinates = VK_FALSE;
+    sampler_info.compareEnable = VK_FALSE;
+    sampler_info.compareOp = vk::CompareOp::eAlways;
+    sampler_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
+    sampler_info.mipLodBias = 0.0f;
+    sampler_info.minLod = 0.0f;
+    sampler_info.maxLod = 0.0f;
+
+    texture_sampler = device.createSampler(sampler_info);
+  }
+
   auto init_vulkan() {
     CHECK_SDL(SDL_Init(SDL_INIT_VIDEO), != 0);
 
@@ -1090,6 +1152,10 @@ struct window_and_vulkan_state {
 
     create_texture_image();
 
+    create_texture_image_view();
+
+    create_texture_sampler();
+
     create_vertex_buffers();
 
     create_index_buffers();
@@ -1109,6 +1175,9 @@ struct window_and_vulkan_state {
     device.waitIdle();
 
     cleanup_swapchain();
+
+    device.destroy(texture_sampler);
+    device.destroy(texture_image_view);
 
     device.destroy(texture_image);
     device.free(texture_image_memory);

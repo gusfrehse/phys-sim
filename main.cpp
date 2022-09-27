@@ -18,6 +18,7 @@
 #include <optional>
 #include <chrono>
 
+#include <utility>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
@@ -28,6 +29,9 @@
 #define GLM_FORCE_RADIANS
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 #include "shaders.h"
 
@@ -147,6 +151,9 @@ struct window_and_vulkan_state {
 
   std::vector<vk::DescriptorSet> descriptor_sets;
 
+  vk::Image texture_image;
+  vk::DeviceMemory texture_image_memory;
+
   uint32_t current_frame = 0;
 
   auto record_command_buffer(vk::CommandBuffer command_buffer,
@@ -216,6 +223,24 @@ struct window_and_vulkan_state {
     }
   }
 
+  auto find_memory_type(uint32_t type_filter,
+                        vk::MemoryPropertyFlags properties){
+    vk::PhysicalDeviceMemoryProperties mem_properties =
+          physical_device.getMemoryProperties();
+
+        for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
+          if (type_filter & (1 << i)) {
+            if ((mem_properties.memoryTypes[i].propertyFlags & properties)
+              == properties) {
+              return i;
+            }
+          }
+        }
+
+        fprintf(stderr, "ERROR: failed to find memory type\n");
+        exit(1);
+    };
+
   std::pair<vk::Buffer, vk::DeviceMemory> create_buffer(vk::DeviceSize size,
           vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties) {
 
@@ -232,23 +257,6 @@ struct window_and_vulkan_state {
       vk::MemoryRequirements mem_requirements =
           device.getBufferMemoryRequirements(buffer);
 
-    auto find_memory_type = [this](uint32_t type_filter,
-                                   vk::MemoryPropertyFlags properties){
-        vk::PhysicalDeviceMemoryProperties mem_properties =
-          physical_device.getMemoryProperties();
-
-        for (uint32_t i = 0; i < mem_properties.memoryTypeCount; i++) {
-          if (type_filter & (1 << i)) {
-            if ((mem_properties.memoryTypes[i].propertyFlags & properties)
-              == properties) {
-              return i;
-            }
-          }
-        }
-
-        fprintf(stderr, "ERROR: failed to find memory type\n");
-        exit(1);
-    };
 
     vk::MemoryAllocateInfo alloc_info{};
     alloc_info.allocationSize = mem_requirements.size;
@@ -262,11 +270,7 @@ struct window_and_vulkan_state {
     return {buffer, buffer_memory};
   }
 
-  auto copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) {
-    // create a command buffer that will be used only once to copy memory from
-    // (in this specific case) from the src buffer to dst buffer
-
-
+  vk::CommandBuffer begin_single_time_commands() {
     vk::CommandBufferAllocateInfo alloc_info{};
     alloc_info.level = vk::CommandBufferLevel::ePrimary;
     alloc_info.commandPool = alloc_command_pool;
@@ -281,13 +285,10 @@ struct window_and_vulkan_state {
 
     command_buffer.begin(begin_info);
 
-    vk::BufferCopy copy_region{};
-    copy_region.srcOffset = 0;
-    copy_region.dstOffset = 0;
-    copy_region.size = size;
+    return command_buffer;
+  }
 
-    command_buffer.copyBuffer(src, dst, {copy_region});
-
+  void end_single_time_commands(vk::CommandBuffer command_buffer) {
     command_buffer.end();
 
     // submit command buffer
@@ -301,6 +302,97 @@ struct window_and_vulkan_state {
     queue.waitIdle();
 
     device.freeCommandBuffers(alloc_command_pool, {command_buffer});
+  }
+
+  auto copy_buffer(vk::Buffer src, vk::Buffer dst, vk::DeviceSize size) {
+    vk::CommandBuffer command_buffer = begin_single_time_commands();
+
+    vk::BufferCopy copy_region{};
+    copy_region.srcOffset = 0;
+    copy_region.dstOffset = 0;
+    copy_region.size = size;
+
+    command_buffer.copyBuffer(src, dst, {copy_region});
+
+    end_single_time_commands(command_buffer);
+  }
+
+  void transition_image_layout(vk::Image image,
+                               vk::Format format,
+                               vk::ImageLayout old_layout,
+                               vk::ImageLayout new_layout) {
+
+    auto command_buffer = begin_single_time_commands();
+
+    vk::ImageMemoryBarrier barrier{};
+    barrier.oldLayout = old_layout;
+    barrier.newLayout = new_layout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    //barrier.srcAccessMask = vk::AccessFlagBits::eNone; // TODO
+    //barrier.dstAccessMask = vk::AccessFlagBits::eNone; // TODO
+    
+    vk::PipelineStageFlags src_stage, dst_stage;
+
+    if (old_layout == vk::ImageLayout::eUndefined &&
+        new_layout == vk::ImageLayout::eTransferDstOptimal) {
+
+      barrier.srcAccessMask = vk::AccessFlagBits::eNone;
+      barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+      src_stage = vk::PipelineStageFlagBits::eTopOfPipe;
+      dst_stage = vk::PipelineStageFlagBits::eTransfer;
+
+    } else if (old_layout == vk::ImageLayout::eTransferDstOptimal &&
+               new_layout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+
+      barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+      barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+      src_stage = vk::PipelineStageFlagBits::eTransfer;
+      dst_stage = vk::PipelineStageFlagBits::eFragmentShader;
+    } else {
+      fprintf(stderr, "ERROR: unsupported layout transition!\n");
+      exit(1);
+    }
+    
+    command_buffer.pipelineBarrier(src_stage,
+                                   dst_stage,
+                                   static_cast<vk::DependencyFlags>(0), // this is weird hopefully doesn't break anything
+                                   {},
+                                   {},
+                                   {barrier});
+
+    end_single_time_commands(command_buffer);
+
+  }
+
+  void copy_buffer_to_image(vk::Buffer buffer, vk::Image image, uint32_t width,
+                            uint32_t height) {
+    vk::CommandBuffer command_buffer = begin_single_time_commands();
+
+    vk::BufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+
+    region.imageSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+
+    region.imageOffset = vk::Offset3D {0, 0, 0};
+    region.imageExtent = vk::Extent3D {width, height, 1};
+
+    command_buffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
+
+    end_single_time_commands(command_buffer);
   }
 
   auto create_vertex_buffers() {
@@ -870,12 +962,107 @@ struct window_and_vulkan_state {
     queue = device.getQueue(queue_family_index.value(), 0);
   }
 
+  std::pair<vk::Image, vk::DeviceMemory>
+  create_image(uint32_t width,
+               uint32_t height,
+               vk::Format format,
+               vk::ImageTiling tiling,
+               vk::ImageUsageFlags usage,
+               vk::MemoryPropertyFlags properties) {
+    vk::Image image;
+    vk::DeviceMemory image_memory;
+
+    vk::ImageCreateInfo image_info{};
+    image_info.imageType = vk::ImageType::e2D;
+    image_info.extent.width = width;
+    image_info.extent.height = height;
+    image_info.extent.depth = 1;
+    image_info.mipLevels = 1;
+    image_info.arrayLayers = 1;
+    image_info.format = format;
+    image_info.tiling = tiling;
+    image_info.initialLayout = vk::ImageLayout::eUndefined;
+    image_info.usage = usage;
+    image_info.sharingMode = vk::SharingMode::eExclusive;
+    image_info.samples = vk::SampleCountFlagBits::e1;
+
+    image = device.createImage(image_info);
+
+    vk::MemoryRequirements mem_requirements =
+      device.getImageMemoryRequirements(image);
+
+    vk::MemoryAllocateInfo alloc_info{};
+    alloc_info.allocationSize = mem_requirements.size;
+    alloc_info.memoryTypeIndex =
+      find_memory_type(mem_requirements.memoryTypeBits,
+                       vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    image_memory = device.allocateMemory(alloc_info);
+
+    device.bindImageMemory(image, image_memory, 0);
+
+    return {image, image_memory};
+  }
+
+  auto create_texture_image() {
+    int tex_width, tex_height, tex_channels;
+    stbi_uc* pixels = stbi_load("textures/texture.jpg", &tex_width, &tex_height,
+                                &tex_channels, STBI_rgb_alpha);
+    vk::DeviceSize image_size = tex_width * tex_height * 4;
+
+    if (!pixels) {
+      fprintf(stderr, "ERROR: loading texture\n");
+      exit(1);
+    }
+
+    auto [staging_buffer, staging_buffer_memory] =
+      create_buffer(image_size,
+                    vk::BufferUsageFlagBits::eTransferSrc,
+                    vk::MemoryPropertyFlagBits::eHostVisible |
+                    vk::MemoryPropertyFlagBits::eHostCoherent);
+
+    void *data = device.mapMemory(staging_buffer_memory, 0, image_size);
+
+    memcpy(data, pixels, static_cast<size_t>(image_size));
+
+    device.unmapMemory(staging_buffer_memory);
+
+    stbi_image_free(pixels);
+
+    std::tie(texture_image, texture_image_memory)  =
+      create_image(tex_width, tex_height,
+                   vk::Format::eR8G8B8A8Srgb,
+                   vk::ImageTiling::eOptimal,
+                   vk::ImageUsageFlagBits::eTransferDst |
+                   vk::ImageUsageFlagBits::eSampled,
+                   vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    transition_image_layout(texture_image,
+                            vk::Format::eR8G8B8A8Srgb,
+                            vk::ImageLayout::eUndefined,
+                            vk::ImageLayout::eTransferDstOptimal);
+
+    copy_buffer_to_image(staging_buffer,
+                         texture_image,
+                         static_cast<uint32_t>(tex_width),
+                         static_cast<uint32_t>(tex_height));
+
+    transition_image_layout(texture_image, 
+                            vk::Format::eR8G8B8A8Srgb, 
+                            vk::ImageLayout::eTransferDstOptimal, 
+                            vk::ImageLayout::eShaderReadOnlyOptimal);
+
+    device.destroy(staging_buffer);
+    device.free(staging_buffer_memory);
+    
+  }
+
   auto init_vulkan() {
     CHECK_SDL(SDL_Init(SDL_INIT_VIDEO), != 0);
 
     // create window
     window = SDL_CreateWindow(
-        "aim trainer", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+        "phys-sim", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
         window_dimensions.width, window_dimensions.height,
         SDL_WINDOW_VULKAN | SDL_WINDOW_SHOWN | SDL_WINDOW_RESIZABLE);
 
@@ -901,6 +1088,8 @@ struct window_and_vulkan_state {
 
     create_command_pools();
 
+    create_texture_image();
+
     create_vertex_buffers();
 
     create_index_buffers();
@@ -920,6 +1109,9 @@ struct window_and_vulkan_state {
     device.waitIdle();
 
     cleanup_swapchain();
+
+    device.destroy(texture_image);
+    device.free(texture_image_memory);
 
     device.destroy(vertex_buffer);
     device.free(vertex_buffer_memory);

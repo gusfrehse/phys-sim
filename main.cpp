@@ -27,6 +27,7 @@
 #include <vulkan/vulkan_structs.hpp>
 
 #define GLM_FORCE_RADIANS
+#define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -35,16 +36,16 @@
 
 #include "shaders.h"
 
-#define CHECK_SDL(x, pred)                                                       \
-  do {                                                                           \
-    if (x pred) {                                                                \
-      fprintf(stderr, "%s %s:%d, sdl check failed:\n",                           \
-              __PRETTY_FUNCTION__,                                               \
-              __FILE__,                                                          \
-              __LINE__);                                                         \
-      SDL_Log("SDL_ERROR: " #x ": %s", SDL_GetError());                          \
-      exit(1);                                                                   \
-    }                                                                            \
+#define CHECK_SDL(x, pred)                                                     \
+  do {                                                                         \
+    if (x pred) {                                                              \
+      fprintf(stderr, "%s %s:%d, sdl check failed:\n",                         \
+              __PRETTY_FUNCTION__,                                             \
+              __FILE__,                                                        \
+              __LINE__);                                                       \
+      SDL_Log("SDL_ERROR: " #x ": %s", SDL_GetError());                        \
+      exit(1);                                                                 \
+    }                                                                          \
   } while(0);
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -56,7 +57,7 @@ struct uniform_buffer_object {
 };
 
 struct vertex {
-  glm::vec2 pos;
+  glm::vec3 pos;
   glm::vec3 color;
   glm::vec2 tex_coord;
 
@@ -66,7 +67,7 @@ struct vertex {
 
     attrib_description[0].binding = 0;
     attrib_description[0].location = 0;
-    attrib_description[0].format = vk::Format::eR32G32Sfloat;
+    attrib_description[0].format = vk::Format::eR32G32B32Sfloat;
     attrib_description[0].offset = offsetof(vertex, pos);
 
     attrib_description[1].binding = 0;
@@ -94,14 +95,20 @@ struct vertex {
 };
 
 const std::vector<vertex> vertices = {
-  {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-  {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-  {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-  {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+  {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+  {{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+  {{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+  {{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+
+  {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+  {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+  {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+  {{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}}  
 };
 
 const std::vector<uint16_t> indices = {
-  0, 1, 2, 2, 3, 0
+  0, 1, 2, 2, 3, 0,
+  4, 5, 6, 6, 7, 4
 };
 
 struct window_and_vulkan_state {
@@ -124,6 +131,10 @@ struct window_and_vulkan_state {
   std::vector<vk::ImageView> swapchain_image_views;
 
   std::vector<vk::Framebuffer> swapchain_framebuffers;
+
+  vk::Image depth_image;
+  vk::DeviceMemory depth_image_memory;
+  vk::ImageView depth_image_view;
 
   std::optional<uint32_t> queue_family_index = std::nullopt;
 
@@ -161,6 +172,7 @@ struct window_and_vulkan_state {
   vk::ImageView texture_image_view;
   vk::Sampler texture_sampler;
 
+
   uint32_t current_frame = 0;
 
   auto record_command_buffer(vk::CommandBuffer command_buffer,
@@ -175,9 +187,12 @@ struct window_and_vulkan_state {
     renderpass_begin_info.renderArea.offset = vk::Offset2D(0, 0);
     renderpass_begin_info.renderArea.extent = swapchain_image_extent;
 
-    vk::ClearValue clear_color(std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f});
-    renderpass_begin_info.clearValueCount = 1;
-    renderpass_begin_info.pClearValues = &clear_color;
+    std::array<vk::ClearValue, 2> clear_colors{};
+    clear_colors[0].color = std::array<float, 4>{0.0f, 0.0f, 0.0f, 1.0f};
+    clear_colors[1].depthStencil = vk::ClearDepthStencilValue{1.0f, 0};
+
+    renderpass_begin_info.clearValueCount = clear_colors.size();
+    renderpass_begin_info.pClearValues = clear_colors.data();
 
     command_buffer.beginRenderPass(renderpass_begin_info,
                                    vk::SubpassContents::eInline);
@@ -208,7 +223,8 @@ struct window_and_vulkan_state {
                                       {descriptor_sets[current_frame]},
                                       {});
 
-    command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+    command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()),
+                               1, 0, 0, 0);
 
     command_buffer.endRenderPass();
 
@@ -397,7 +413,10 @@ struct window_and_vulkan_state {
     region.imageOffset = vk::Offset3D {0, 0, 0};
     region.imageExtent = vk::Extent3D {width, height, 1};
 
-    command_buffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
+    command_buffer.copyBufferToImage(buffer,
+                                     image,
+                                     vk::ImageLayout::eTransferDstOptimal,
+                                     {region});
 
     end_single_time_commands(command_buffer);
   }
@@ -493,7 +512,8 @@ struct window_and_vulkan_state {
 
     vk::DescriptorSetLayoutBinding sampler_layout_binding{};
     sampler_layout_binding.binding = 1;
-    sampler_layout_binding.descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    sampler_layout_binding.descriptorType =
+      vk::DescriptorType::eCombinedImageSampler;
     sampler_layout_binding.descriptorCount = 1;
     sampler_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
     sampler_layout_binding.pImmutableSamplers = nullptr;
@@ -561,7 +581,8 @@ struct window_and_vulkan_state {
       descriptor_writes[1].dstSet = descriptor_sets[i];
       descriptor_writes[1].dstBinding = 1;
       descriptor_writes[1].dstArrayElement = 0;
-      descriptor_writes[1].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+      descriptor_writes[1].descriptorType =
+        vk::DescriptorType::eCombinedImageSampler;
       descriptor_writes[1].descriptorCount = 1;
       descriptor_writes[1].pImageInfo = &image_info;
 
@@ -598,7 +619,6 @@ struct window_and_vulkan_state {
     color_attachment_desc.samples = vk::SampleCountFlagBits::e1;
     color_attachment_desc.loadOp = vk::AttachmentLoadOp::eClear;
     color_attachment_desc.storeOp = vk::AttachmentStoreOp::eStore;
-
     color_attachment_desc.initialLayout = vk::ImageLayout::eUndefined;
     color_attachment_desc.finalLayout = vk::ImageLayout::ePresentSrcKHR;
 
@@ -606,22 +626,50 @@ struct window_and_vulkan_state {
     color_attachment_ref.attachment = 0;
     color_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
+    vk::AttachmentDescription depth_attachment_desc{};
+    depth_attachment_desc.format = find_depth_format();
+    depth_attachment_desc.samples = vk::SampleCountFlagBits::e1;
+    depth_attachment_desc.loadOp = vk::AttachmentLoadOp::eClear;
+    depth_attachment_desc.storeOp = vk::AttachmentStoreOp::eDontCare;
+    depth_attachment_desc.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
+    depth_attachment_desc.stencilStoreOp = vk::AttachmentStoreOp::eDontCare;
+    depth_attachment_desc.initialLayout = vk::ImageLayout::eUndefined;
+    depth_attachment_desc.finalLayout =
+      vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
+    vk::AttachmentReference depth_attachment_ref{};
+    depth_attachment_ref.attachment = 1;
+    depth_attachment_ref.layout =
+      vk::ImageLayout::eDepthStencilAttachmentOptimal;
+
     vk::SubpassDescription subpass{};
     subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
+    subpass.pDepthStencilAttachment = &depth_attachment_ref;
 
     vk::SubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
     dependency.dstSubpass = 0;
-    dependency.srcStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+    dependency.srcStageMask = // FIGURE: are these masks what we will use in this specific subpass?
+      vk::PipelineStageFlagBits::eColorAttachmentOutput |
+      vk::PipelineStageFlagBits::eEarlyFragmentTests;
     dependency.srcAccessMask = vk::AccessFlagBits::eNone;
-    dependency.dstStageMask = vk::PipelineStageFlagBits::eColorAttachmentOutput;
-    dependency.dstAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+    dependency.dstStageMask =
+      vk::PipelineStageFlagBits::eColorAttachmentOutput |
+      vk::PipelineStageFlagBits::eEarlyFragmentTests;
+    dependency.dstAccessMask =
+      vk::AccessFlagBits::eColorAttachmentWrite |
+      vk::AccessFlagBits::eDepthStencilAttachmentWrite;
+
+    std::array<vk::AttachmentDescription, 2> attachments = {
+      color_attachment_desc,
+      depth_attachment_desc,
+    };
 
     vk::RenderPassCreateInfo renderpass_info{};
-    renderpass_info.attachmentCount = 1;
-    renderpass_info.pAttachments = &color_attachment_desc;
+    renderpass_info.attachmentCount = attachments.size();
+    renderpass_info.pAttachments = attachments.data();
     renderpass_info.subpassCount = 1;
     renderpass_info.pSubpasses = &subpass;
     renderpass_info.dependencyCount = 1;
@@ -724,6 +772,13 @@ struct window_and_vulkan_state {
 
     pipeline_layout = device.createPipelineLayout(pipeline_layout_info);
 
+    vk::PipelineDepthStencilStateCreateInfo depth_stencil_info{};
+    depth_stencil_info.depthTestEnable = VK_TRUE;
+    depth_stencil_info.depthWriteEnable = VK_TRUE;
+    depth_stencil_info.depthCompareOp = vk::CompareOp::eLess;
+    depth_stencil_info.depthBoundsTestEnable = VK_FALSE;
+    depth_stencil_info.stencilTestEnable = VK_FALSE;
+
     vk::GraphicsPipelineCreateInfo pipeline_info{};
     pipeline_info.stageCount = 2;
     pipeline_info.pStages = shader_stages;
@@ -733,7 +788,7 @@ struct window_and_vulkan_state {
     pipeline_info.pViewportState = &viewport_state_info;
     pipeline_info.pRasterizationState = &rasterizer_info;
     pipeline_info.pMultisampleState = &multisample_info;
-    pipeline_info.pDepthStencilState = nullptr;
+    pipeline_info.pDepthStencilState = &depth_stencil_info;
     pipeline_info.pColorBlendState = &color_blend_info;
     pipeline_info.pDynamicState = &dynamic_state_info;
 
@@ -833,7 +888,10 @@ struct window_and_vulkan_state {
     // create the image views
     swapchain_image_views.clear();
     for (auto &image : swapchain_images) {
-      swapchain_image_views.push_back(create_image_view(image, swapchain_image_format));
+      swapchain_image_views
+        .push_back(create_image_view(image,
+                                     swapchain_image_format,
+                                     vk::ImageAspectFlagBits::eColor));
     }
 
     //fprintf(stderr, "Created swapchain\n");
@@ -843,12 +901,15 @@ struct window_and_vulkan_state {
     swapchain_framebuffers.clear();
 
     for (int i = 0; i < swapchain_image_views.size(); i++) {
-      vk::ImageView attachments[] = {swapchain_image_views[i]};
+      std::array<vk::ImageView, 2> attachments = {
+        swapchain_image_views[i],
+        depth_image_view,
+      };
 
       vk::FramebufferCreateInfo framebuffer_info{};
       framebuffer_info.renderPass = renderpass;
-      framebuffer_info.attachmentCount = 1;
-      framebuffer_info.pAttachments = attachments;
+      framebuffer_info.attachmentCount = attachments.size();
+      framebuffer_info.pAttachments = attachments.data();
       framebuffer_info.width = swapchain_image_extent.width;
       framebuffer_info.height = swapchain_image_extent.height;
       framebuffer_info.layers = 1;
@@ -859,6 +920,10 @@ struct window_and_vulkan_state {
   }
 
   auto cleanup_swapchain() {
+    device.destroy(depth_image_view);
+    device.destroy(depth_image);
+    device.free(depth_image_memory);
+
     for (auto &fb : swapchain_framebuffers) {
       device.destroy(fb);
     }
@@ -870,12 +935,33 @@ struct window_and_vulkan_state {
     device.destroy(swapchain);
   }
 
+  auto create_depth_resources() {
+    vk::Format depth_format = find_depth_format();
+
+    std::tie(depth_image, depth_image_memory) =
+      create_image(swapchain_image_extent.width,
+                   swapchain_image_extent.height,
+                   depth_format,
+                   vk::ImageTiling::eOptimal,
+                   vk::ImageUsageFlagBits::eDepthStencilAttachment,
+                   vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    depth_image_view = create_image_view(depth_image,
+                                         depth_format,
+                                         vk::ImageAspectFlagBits::eDepth);
+
+    // here we don't need to transition the layout from undefined to depth
+    // optimal because the renderpass will do that for us
+  }
+
   auto recreate_swapchain() {
     device.waitIdle();
 
     cleanup_swapchain();
 
     create_swapchain();
+
+    create_depth_resources();
 
     create_framebuffers();
   }
@@ -1076,12 +1162,14 @@ struct window_and_vulkan_state {
     
   }
 
-  vk::ImageView create_image_view(vk::Image image, vk::Format format) {
+  vk::ImageView create_image_view(vk::Image image,
+                                  vk::Format format,
+                                  vk::ImageAspectFlags aspect_flags) {
     vk::ImageViewCreateInfo view_info{};
     view_info.image = image;
     view_info.viewType = vk::ImageViewType::e2D;
     view_info.format = format;
-    view_info.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    view_info.subresourceRange.aspectMask = aspect_flags;
     view_info.subresourceRange.baseMipLevel = 0;
     view_info.subresourceRange.levelCount = 1;
     view_info.subresourceRange.baseArrayLayer = 0;
@@ -1092,7 +1180,9 @@ struct window_and_vulkan_state {
   }
 
   auto create_texture_image_view() {
-    texture_image_view = create_image_view(texture_image, vk::Format::eR8G8B8A8Srgb);
+    texture_image_view = create_image_view(texture_image,
+                                           vk::Format::eR8G8B8A8Srgb,
+                                           vk::ImageAspectFlagBits::eColor);
   }
 
   auto create_texture_sampler() {
@@ -1117,6 +1207,42 @@ struct window_and_vulkan_state {
     sampler_info.maxLod = 0.0f;
 
     texture_sampler = device.createSampler(sampler_info);
+  }
+  
+  vk::Format find_supported_format(const std::vector<vk::Format>& candidates,
+                                   vk::ImageTiling tiling,
+                                   vk::FormatFeatureFlags features) {
+
+    for (auto format : candidates) {
+      auto props = physical_device.getFormatProperties(format);
+
+      if (tiling == vk::ImageTiling::eLinear &&
+          (props.linearTilingFeatures & features) == features) {
+        return format;
+      }
+
+      if (tiling == vk::ImageTiling::eOptimal &&
+          (props.optimalTilingFeatures & features) == features) {
+        return format;
+      }
+    }
+
+    fprintf(stderr, "ERROR: could not find supported format!\n");
+    exit(1);
+  }
+
+  vk::Format find_depth_format() {
+    return find_supported_format(
+      { vk::Format::eD32Sfloat,
+        vk::Format::eD32SfloatS8Uint,
+        vk::Format::eD24UnormS8Uint }, 
+      vk::ImageTiling::eOptimal, 
+      vk::FormatFeatureFlagBits::eDepthStencilAttachment);
+  }
+
+  bool has_stencil_component(vk::Format format) {
+    return format == vk::Format::eD32SfloatS8Uint ||
+           format == vk::Format::eD24UnormS8Uint;
   }
 
   auto init_vulkan() {
@@ -1145,6 +1271,8 @@ struct window_and_vulkan_state {
     create_descriptor_set_layout();
 
     create_graphics_pipeline();
+
+    create_depth_resources();
 
     create_framebuffers();
 
@@ -1234,12 +1362,18 @@ struct window_and_vulkan_state {
                            glm::vec3(0.0f),
                            glm::vec3(0.0f, 0.0f, 1.0f));
 
-    ubo.proj = glm::perspective(glm::radians(45.0f), swapchain_image_extent.width / (float) swapchain_image_extent.height, 0.1f, 10.0f);
+    ubo.proj = glm::perspective(glm::radians(45.0f),
+                                swapchain_image_extent.width /
+                                (float) swapchain_image_extent.height,
+                                0.1f,
+                                10.0f);
 
     ubo.proj[1][1] *= -1;
 
     void *data;
-    data = device.mapMemory(uniform_buffers_memory[current_image], 0, sizeof(ubo));
+    data = device.mapMemory(uniform_buffers_memory[current_image],
+                            0,
+                            sizeof(ubo));
 
     memcpy(data, &ubo, sizeof(ubo));
 

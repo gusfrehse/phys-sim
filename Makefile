@@ -1,8 +1,15 @@
-CC := g++
-CXX := g++
+#CC := g++
+#CXX := g++
 
-CXXFLAGS := -g
-LDLIBS := -lSDL2 -lvulkan
+CC := x86_64-w64-mingw32-g++
+CXX := x86_64-w64-mingw32-g++
+
+CXXFLAGS := -g 
+
+SDL_STATIC_LIBS := -L/usr/x86_64-w64-mingw32/lib -lmingw32 -lSDL2main /usr/x86_64-w64-mingw32/lib/libSDL2.a -mwindows -Wl,--dynamicbase -Wl,--nxcompat -Wl,--high-entropy-va -lm -ldinput8 -ldxguid -ldxerr8 -luser32 -lgdi32 -lwinmm -limm32 -lole32 -loleaut32 -lshell32 -lsetupapi -lversion -luuid
+
+LDLIBS := -static-libgcc -static-libstdc++ -Wl,-Bstatic -lstdc++ -lpthread -lssp $(SDL_STATIC_LIBS) ./vulkan-1.dll
+LDFLAGS :=
 
 EXE := main
 OBJS := main.o
@@ -27,7 +34,7 @@ shaders.h : $(SPVS)
 	done
 	echo -e '\n#endif' >> $@
 
-.PHONY : clean run
+.PHONY : clean run zip
 
 clean :
 	rm -f $(EXE)
@@ -38,3 +45,6 @@ clean :
 run : $(EXE)
 	./$(EXE)
 
+zip :
+	-rm $(EXE).zip
+	zip $(EXE).zip $(EXE).exe textures/texture.jpg libvulkan-1.dll vulkan-1.dll SDL2.dll libwinpthread-1.dll

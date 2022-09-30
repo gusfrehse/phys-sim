@@ -970,9 +970,13 @@ struct window_and_vulkan_state {
     vk::ApplicationInfo application_info("phys sim");
 
     // validation layer work
+#ifdef DISABLE_LAYERS
+    std::vector<const char *> validation_layers = {};
+#else
     std::vector<const char *> validation_layers = {
         "VK_LAYER_KHRONOS_validation"
     };
+#endif
 
     // SDL extensions
     unsigned int extensions_count = 0;
@@ -1462,7 +1466,7 @@ struct window_and_vulkan_state {
   }
 };
 
-auto main() -> int {
+auto main(int argc, char** argv) -> int {
   window_and_vulkan_state state;
   state.init();
 
@@ -1480,6 +1484,8 @@ auto main() -> int {
   }
 
   state.cleanup();
+
+  return 0;
 }
 
 /* vim: set sts=2 ts=2 sw=2 et cc=81: */

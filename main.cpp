@@ -1,25 +1,27 @@
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <limits>
+#include <optional>
+#include <chrono>
+#include <utility>
+#include <vector>
+#include <unordered_map>
+
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_events.h>
 #include <SDL2/SDL_timer.h>
 #include <SDL2/SDL_video.h>
 #include <SDL2/SDL_vulkan.h>
 
-#include <algorithm>
-#include <array>
-#include <cstdint>
-#include <cstdio>
-#include <cstring>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <glm/ext/matrix_transform.hpp>
 #include <glm/ext/vector_float3.hpp>
 #include <glm/geometric.hpp>
 #include <glm/trigonometric.hpp>
-#include <limits>
-#include <optional>
-#include <chrono>
 
-#include <utility>
-#include <vector>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_enums.hpp>
@@ -28,8 +30,10 @@
 
 #define GLM_FORCE_RADIANS
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/hash.hpp>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -95,7 +99,24 @@ struct vertex {
 
     return binding_description;
   }
+
+  bool operator==(const vertex& other) const {
+    return pos == other.pos && color == other.color && tex_coord == tex_coord;
+  }
 };
+
+namespace std {
+  template<> struct hash<vertex> {
+    size_t operator()(vertex const& vertex) const {
+      return ((hash<glm::vec3>()(vertex.pos) ^
+              (hash<glm::vec3>()(vertex.color) << 1)) >> 1) ^
+              (hash<glm::vec2>()(vertex.tex_coord) << 1);
+    }
+  };
+}
+
+const std::string MODEL_PATH = "models/viking_room.obj";
+const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 const std::vector<vertex> vertices = {
   {{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
@@ -156,6 +177,9 @@ struct window_and_vulkan_state {
   std::vector<vk::Semaphore> image_available_semaphores;
   std::vector<vk::Semaphore> render_finished_semaphores;
   std::vector<vk::Fence> in_flight_fences;
+
+  std::vector<vertex> vertices;
+  std::vector<uint32_t> indices;
 
   vk::Buffer vertex_buffer;
   vk::DeviceMemory vertex_buffer_memory;
@@ -218,7 +242,7 @@ struct window_and_vulkan_state {
     
     command_buffer.bindVertexBuffers(0, {vertex_buffer}, {0});
 
-    command_buffer.bindIndexBuffer(index_buffer, 0, vk::IndexType::eUint16);
+    command_buffer.bindIndexBuffer(index_buffer, 0, vk::IndexType::eUint32);
 
     command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
                                       pipeline_layout,
@@ -1114,14 +1138,16 @@ struct window_and_vulkan_state {
 
   auto create_texture_image() {
     int tex_width, tex_height, tex_channels;
-    stbi_uc* pixels = stbi_load("textures/texture.jpg", &tex_width, &tex_height,
+
+    stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &tex_width, &tex_height,
                                 &tex_channels, STBI_rgb_alpha);
-    vk::DeviceSize image_size = tex_width * tex_height * 4;
 
     if (!pixels) {
       fprintf(stderr, "ERROR: loading texture\n");
       exit(1);
     }
+
+    vk::DeviceSize image_size = tex_width * tex_height * 4;
 
     auto [staging_buffer, staging_buffer_memory] =
       create_buffer(image_size,
@@ -1248,6 +1274,57 @@ struct window_and_vulkan_state {
            format == vk::Format::eD24UnormS8Uint;
   }
 
+  void load_model() {
+    tinyobj::attrib_t attrib;
+    std::vector<tinyobj::shape_t> shapes;
+    std::vector<tinyobj::material_t> materials;
+    std::string warn, error;
+
+    if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &error,
+                          MODEL_PATH.c_str())) {
+
+      fprintf(stderr, "ERROR loading obj: %s\n", error.c_str());
+      exit(1);
+
+    }
+
+    fprintf(stderr, "WARNING from loading obj: %s\n", warn.c_str());
+
+    std::unordered_map<vertex, uint32_t> unique_vertices{};
+
+    for (const auto& shape : shapes) {
+      for (const auto& index : shape.mesh.indices) {
+        vertex v{};
+
+        v.pos = {
+          attrib.vertices[3 * index.vertex_index + 0],
+          attrib.vertices[3 * index.vertex_index + 1],
+          attrib.vertices[3 * index.vertex_index + 2],
+        };
+
+        v.tex_coord = {
+          attrib.texcoords[2 * index.texcoord_index + 0],
+          1.0f - attrib.texcoords[2 * index.texcoord_index + 1],
+        };
+
+        v.color = { 1.0f, 1.0f, 1.0f };
+        
+        if (unique_vertices.count(v) == 0) {
+          unique_vertices[v] = static_cast<uint32_t>(vertices.size());
+          vertices.push_back(v);
+        }
+
+        indices.push_back(unique_vertices[v]);
+      }
+    }
+
+    fprintf(stderr,
+            "LOG vertices size: %zu bytes, indices size: %zu bytes\n",
+            vertices.size() * sizeof(vertices[0]),
+            indices.size() * sizeof(indices[0]));
+
+  }
+
   auto init_vulkan() {
     CHECK_SDL(SDL_Init(SDL_INIT_VIDEO), != 0);
 
@@ -1286,6 +1363,8 @@ struct window_and_vulkan_state {
     create_texture_image_view();
 
     create_texture_sampler();
+
+    load_model();
 
     create_vertex_buffers();
 
@@ -1358,7 +1437,7 @@ struct window_and_vulkan_state {
 
     uniform_buffer_object ubo;
     ubo.model = glm::rotate(glm::mat4(1.0f),
-                            time * glm::radians(90.0f),
+                            0.5f * time * glm::radians(90.0f),
                             glm::vec3(0.0f, 0.0f, 1.0f));
 
     ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),

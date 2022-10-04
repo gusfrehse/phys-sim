@@ -6,6 +6,7 @@
 #include <limits>
 #include <optional>
 #include <chrono>
+#include <tuple>
 #include <utility>
 #include <vector>
 #include <unordered_map>
@@ -200,6 +201,11 @@ struct window_and_vulkan_state {
   vk::ImageView texture_image_view;
   vk::Sampler texture_sampler;
 
+  vk::SampleCountFlagBits msaa_samples = vk::SampleCountFlagBits::e1;
+
+  vk::Image color_image;
+  vk::DeviceMemory color_image_memory;
+  vk::ImageView color_image_view;
 
   uint32_t current_frame = 0;
 
@@ -645,19 +651,21 @@ struct window_and_vulkan_state {
   auto create_renderpass() {
     vk::AttachmentDescription color_attachment_desc{};
     color_attachment_desc.format = swapchain_image_format;
-    color_attachment_desc.samples = vk::SampleCountFlagBits::e1;
+    color_attachment_desc.samples = msaa_samples;
     color_attachment_desc.loadOp = vk::AttachmentLoadOp::eClear;
     color_attachment_desc.storeOp = vk::AttachmentStoreOp::eStore;
     color_attachment_desc.initialLayout = vk::ImageLayout::eUndefined;
-    color_attachment_desc.finalLayout = vk::ImageLayout::ePresentSrcKHR;
+    color_attachment_desc.finalLayout =
+      vk::ImageLayout::eColorAttachmentOptimal;
 
     vk::AttachmentReference color_attachment_ref{};
     color_attachment_ref.attachment = 0;
     color_attachment_ref.layout = vk::ImageLayout::eColorAttachmentOptimal;
 
+
     vk::AttachmentDescription depth_attachment_desc{};
     depth_attachment_desc.format = find_depth_format();
-    depth_attachment_desc.samples = vk::SampleCountFlagBits::e1;
+    depth_attachment_desc.samples = msaa_samples;
     depth_attachment_desc.loadOp = vk::AttachmentLoadOp::eClear;
     depth_attachment_desc.storeOp = vk::AttachmentStoreOp::eDontCare;
     depth_attachment_desc.stencilLoadOp = vk::AttachmentLoadOp::eDontCare;
@@ -671,11 +679,29 @@ struct window_and_vulkan_state {
     depth_attachment_ref.layout =
       vk::ImageLayout::eDepthStencilAttachmentOptimal;
 
+    vk::AttachmentDescription color_attachment_resolve_desc{};
+    color_attachment_resolve_desc.format = swapchain_image_format;
+    color_attachment_resolve_desc.samples = vk::SampleCountFlagBits::e1;
+    color_attachment_resolve_desc.loadOp = vk::AttachmentLoadOp::eDontCare;
+    color_attachment_resolve_desc.storeOp = vk::AttachmentStoreOp::eStore;
+    color_attachment_resolve_desc.stencilLoadOp =
+      vk::AttachmentLoadOp::eDontCare;
+    color_attachment_resolve_desc.stencilLoadOp =
+      vk::AttachmentLoadOp::eDontCare;
+    color_attachment_resolve_desc.initialLayout = vk::ImageLayout::eUndefined;
+    color_attachment_resolve_desc.finalLayout = vk::ImageLayout::ePresentSrcKHR;
+
+    vk::AttachmentReference color_attachment_resolve_ref{};
+    color_attachment_resolve_ref.attachment = 2;
+    color_attachment_resolve_ref.layout =
+      vk::ImageLayout::eColorAttachmentOptimal;
+
     vk::SubpassDescription subpass{};
     subpass.pipelineBindPoint = vk::PipelineBindPoint::eGraphics;
     subpass.colorAttachmentCount = 1;
     subpass.pColorAttachments = &color_attachment_ref;
     subpass.pDepthStencilAttachment = &depth_attachment_ref;
+    subpass.pResolveAttachments = &color_attachment_resolve_ref;
 
     vk::SubpassDependency dependency{};
     dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
@@ -691,9 +717,10 @@ struct window_and_vulkan_state {
       vk::AccessFlagBits::eColorAttachmentWrite |
       vk::AccessFlagBits::eDepthStencilAttachmentWrite;
 
-    std::array<vk::AttachmentDescription, 2> attachments = {
+    std::array<vk::AttachmentDescription, 3> attachments = {
       color_attachment_desc,
       depth_attachment_desc,
+      color_attachment_resolve_desc,
     };
 
     vk::RenderPassCreateInfo renderpass_info{};
@@ -777,8 +804,8 @@ struct window_and_vulkan_state {
     rasterizer_info.depthBiasEnable = false;
 
     vk::PipelineMultisampleStateCreateInfo multisample_info{};
-    multisample_info.sampleShadingEnable = false;
-    multisample_info.rasterizationSamples = vk::SampleCountFlagBits::e1;
+    multisample_info.sampleShadingEnable = true;
+    multisample_info.rasterizationSamples = msaa_samples;
     multisample_info.minSampleShading = 1.0f;
     multisample_info.pSampleMask = nullptr;
     multisample_info.alphaToCoverageEnable = false;
@@ -931,9 +958,10 @@ struct window_and_vulkan_state {
     swapchain_framebuffers.clear();
 
     for (int i = 0; i < swapchain_image_views.size(); i++) {
-      std::array<vk::ImageView, 2> attachments = {
-        swapchain_image_views[i],
+      std::array<vk::ImageView, 3> attachments = {
+        color_image_view,
         depth_image_view,
+        swapchain_image_views[i],
       };
 
       vk::FramebufferCreateInfo framebuffer_info{};
@@ -950,6 +978,10 @@ struct window_and_vulkan_state {
   }
 
   auto cleanup_swapchain() {
+    device.destroy(color_image_view);
+    device.destroy(color_image);
+    device.free(color_image_memory);
+
     device.destroy(depth_image_view);
     device.destroy(depth_image);
     device.free(depth_image_memory);
@@ -972,6 +1004,7 @@ struct window_and_vulkan_state {
       create_image(swapchain_image_extent.width,
                    swapchain_image_extent.height,
                    1,
+                   msaa_samples,
                    depth_format,
                    vk::ImageTiling::eOptimal,
                    vk::ImageUsageFlagBits::eDepthStencilAttachment,
@@ -986,6 +1019,26 @@ struct window_and_vulkan_state {
     // optimal because the renderpass will do that for us
   }
 
+  auto create_color_resources() {
+    vk::Format color_format = swapchain_image_format;
+
+    std::tie(color_image, color_image_memory) =
+      create_image(swapchain_image_extent.width,
+                   swapchain_image_extent.height, 
+                   1, 
+                   msaa_samples, 
+                   color_format, 
+                   vk::ImageTiling::eOptimal, 
+                   vk::ImageUsageFlagBits::eTransientAttachment |
+                   vk::ImageUsageFlagBits::eColorAttachment, 
+                   vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+      color_image_view = create_image_view(color_image,
+                                           color_format,
+                                           vk::ImageAspectFlagBits::eColor,
+                                           1);
+  }
+
   auto recreate_swapchain() {
     device.waitIdle();
 
@@ -993,6 +1046,7 @@ struct window_and_vulkan_state {
 
     create_swapchain();
 
+    create_color_resources();
     create_depth_resources();
 
     create_framebuffers();
@@ -1003,7 +1057,7 @@ struct window_and_vulkan_state {
 
     // validation layer work
     std::vector<const char *> validation_layers = {
-        "VK_LAYER_KHRONOS_validation"
+      "VK_LAYER_KHRONOS_validation"
     };
 
     // SDL extensions
@@ -1016,8 +1070,8 @@ struct window_and_vulkan_state {
     std::vector<char *> extensions(extensions_count);
 
     CHECK_SDL(SDL_Vulkan_GetInstanceExtensions(
-                  window, &extensions_count,
-                  const_cast<const char **>(extensions.data())),
+                window, &extensions_count,
+                const_cast<const char **>(extensions.data())),
               != SDL_TRUE);
 
     vk::InstanceCreateInfo instance_create_info(
@@ -1025,6 +1079,34 @@ struct window_and_vulkan_state {
         validation_layers.data(), extensions_count, extensions.data());
 
     instance = vk::createInstance(instance_create_info);
+  }
+
+  vk::SampleCountFlagBits get_max_usable_sample_count() {
+    auto physical_device_properties = physical_device.getProperties();
+
+    auto count =
+      physical_device_properties.limits.framebufferColorSampleCounts &
+      physical_device_properties.limits.framebufferDepthSampleCounts;
+
+    if (count & vk::SampleCountFlagBits::e64)
+      return vk::SampleCountFlagBits::e64;
+
+    if (count & vk::SampleCountFlagBits::e32)
+      return vk::SampleCountFlagBits::e32;
+
+    if (count & vk::SampleCountFlagBits::e16)
+      return vk::SampleCountFlagBits::e16;
+
+    if (count & vk::SampleCountFlagBits::e8)
+      return vk::SampleCountFlagBits::e8;
+
+    if (count & vk::SampleCountFlagBits::e4)
+      return vk::SampleCountFlagBits::e4;
+
+    if (count & vk::SampleCountFlagBits::e2)
+      return vk::SampleCountFlagBits::e2;
+
+    return vk::SampleCountFlagBits::e1;
   }
 
   auto create_physical_device() {
@@ -1055,13 +1137,15 @@ struct window_and_vulkan_state {
       }
     }
 
+    msaa_samples = get_max_usable_sample_count();
+
     printf("Chose device named '%s'\n",
            physical_device.getProperties().deviceName.data());
   }
 
   auto create_device_and_queues() {
     CHECK_SDL(SDL_Vulkan_CreateSurface(
-                  window, instance, reinterpret_cast<VkSurfaceKHR *>(&surface)),
+                window, instance, reinterpret_cast<VkSurfaceKHR *>(&surface)),
               != SDL_TRUE);
 
     // Choose a cool queue family with at least graphics
@@ -1069,8 +1153,8 @@ struct window_and_vulkan_state {
 
     for (uint32_t i = 0; i < queue_family_properties.size(); i++) {
       if (queue_family_properties[i].queueFlags &
-              vk::QueueFlagBits::eGraphics &&
-          physical_device.getSurfaceSupportKHR(i, surface)) {
+        vk::QueueFlagBits::eGraphics &&
+        physical_device.getSurfaceSupportKHR(i, surface)) {
 
         // get first family that has present and graphics suppoort
         queue_family_index = i;
@@ -1085,9 +1169,10 @@ struct window_and_vulkan_state {
 
     vk::PhysicalDeviceFeatures physical_device_features{};
     physical_device_features.samplerAnisotropy = VK_TRUE;
+    physical_device_features.sampleRateShading = VK_TRUE;
 
     std::vector<const char *> required_device_extensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+      VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 
     vk::DeviceCreateInfo device_create_info(
         {}, 1, &device_queue_create_info, 0, nullptr,
@@ -1103,6 +1188,7 @@ struct window_and_vulkan_state {
   create_image(uint32_t width,
                uint32_t height,
                uint32_t mip_levels,
+               vk::SampleCountFlagBits num_samples,
                vk::Format format,
                vk::ImageTiling tiling,
                vk::ImageUsageFlags usage,
@@ -1122,7 +1208,7 @@ struct window_and_vulkan_state {
     image_info.initialLayout = vk::ImageLayout::eUndefined;
     image_info.usage = usage;
     image_info.sharingMode = vk::SharingMode::eExclusive;
-    image_info.samples = vk::SampleCountFlagBits::e1;
+    image_info.samples = num_samples;
 
     image = device.createImage(image_info);
 
@@ -1148,7 +1234,7 @@ struct window_and_vulkan_state {
 
     // check properties for linear bliting support 
     auto format_properties = physical_device.getFormatProperties(image_format);
-    
+
     if (!(format_properties.optimalTilingFeatures &
       vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
 
@@ -1157,7 +1243,7 @@ struct window_and_vulkan_state {
     }
 
     auto command_buffer = begin_single_time_commands();
-    
+
     vk::ImageMemoryBarrier barrier{};
     barrier.image = image;
     barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -1270,6 +1356,7 @@ struct window_and_vulkan_state {
 
     std::tie(texture_image, texture_image_memory)  =
       create_image(tex_width, tex_height, mip_levels,
+                   vk::SampleCountFlagBits::e1,
                    vk::Format::eR8G8B8A8Srgb,
                    vk::ImageTiling::eOptimal,
                    vk::ImageUsageFlagBits::eTransferDst |
@@ -1462,6 +1549,8 @@ struct window_and_vulkan_state {
     create_descriptor_set_layout();
 
     create_graphics_pipeline();
+
+    create_color_resources();
 
     create_depth_resources();
 

@@ -194,6 +194,7 @@ struct window_and_vulkan_state {
 
   std::vector<vk::DescriptorSet> descriptor_sets;
 
+  uint32_t mip_levels;
   vk::Image texture_image;
   vk::DeviceMemory texture_image_memory;
   vk::ImageView texture_image_view;
@@ -370,7 +371,8 @@ struct window_and_vulkan_state {
   void transition_image_layout(vk::Image image,
                                vk::Format format,
                                vk::ImageLayout old_layout,
-                               vk::ImageLayout new_layout) {
+                               vk::ImageLayout new_layout,
+                               uint32_t mip_levels) {
 
     auto command_buffer = begin_single_time_commands();
 
@@ -382,7 +384,7 @@ struct window_and_vulkan_state {
     barrier.image = image;
     barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.levelCount = mip_levels;
     barrier.subresourceRange.baseArrayLayer = 0;
     barrier.subresourceRange.layerCount = 1;
     //barrier.srcAccessMask = vk::AccessFlagBits::eNone; // TODO
@@ -918,7 +920,8 @@ struct window_and_vulkan_state {
       swapchain_image_views
         .push_back(create_image_view(image,
                                      swapchain_image_format,
-                                     vk::ImageAspectFlagBits::eColor));
+                                     vk::ImageAspectFlagBits::eColor,
+                                     1));
     }
 
     //fprintf(stderr, "Created swapchain\n");
@@ -968,6 +971,7 @@ struct window_and_vulkan_state {
     std::tie(depth_image, depth_image_memory) =
       create_image(swapchain_image_extent.width,
                    swapchain_image_extent.height,
+                   1,
                    depth_format,
                    vk::ImageTiling::eOptimal,
                    vk::ImageUsageFlagBits::eDepthStencilAttachment,
@@ -975,7 +979,8 @@ struct window_and_vulkan_state {
 
     depth_image_view = create_image_view(depth_image,
                                          depth_format,
-                                         vk::ImageAspectFlagBits::eDepth);
+                                         vk::ImageAspectFlagBits::eDepth,
+                                         1);
 
     // here we don't need to transition the layout from undefined to depth
     // optimal because the renderpass will do that for us
@@ -1097,6 +1102,7 @@ struct window_and_vulkan_state {
   std::pair<vk::Image, vk::DeviceMemory>
   create_image(uint32_t width,
                uint32_t height,
+               uint32_t mip_levels,
                vk::Format format,
                vk::ImageTiling tiling,
                vk::ImageUsageFlags usage,
@@ -1109,7 +1115,7 @@ struct window_and_vulkan_state {
     image_info.extent.width = width;
     image_info.extent.height = height;
     image_info.extent.depth = 1;
-    image_info.mipLevels = 1;
+    image_info.mipLevels = mip_levels;
     image_info.arrayLayers = 1;
     image_info.format = format;
     image_info.tiling = tiling;
@@ -1136,6 +1142,103 @@ struct window_and_vulkan_state {
     return {image, image_memory};
   }
 
+  auto generate_mipmaps(vk::Image image, vk::Format image_format,
+                        int32_t tex_width, int32_t tex_height,
+                        uint32_t mip_levels ) {
+
+    // check properties for linear bliting support 
+    auto format_properties = physical_device.getFormatProperties(image_format);
+    
+    if (!(format_properties.optimalTilingFeatures &
+      vk::FormatFeatureFlagBits::eSampledImageFilterLinear)) {
+
+      fprintf(stderr,
+              "ERROR Physical device don't support blit filter linear\n");
+    }
+
+    auto command_buffer = begin_single_time_commands();
+    
+    vk::ImageMemoryBarrier barrier{};
+    barrier.image = image;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.levelCount = 1;
+
+    int32_t mip_width = tex_width;
+    int32_t mip_height = tex_height;
+
+    for (int i = 1; i < mip_levels; i++) {
+      barrier.subresourceRange.baseMipLevel = i - 1;
+      barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+      barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+      barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+      barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+
+      command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                     vk::PipelineStageFlagBits::eTransfer,
+                                     static_cast<vk::DependencyFlags>(0),
+                                     {},
+                                     {},
+                                     {barrier});
+
+      vk::ImageBlit blit{};
+      blit.srcOffsets[0] = vk::Offset3D{0, 0, 0};
+      blit.srcOffsets[1] = vk::Offset3D{mip_width, mip_height, 1};
+      blit.srcSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+      blit.srcSubresource.mipLevel = i - 1;
+      blit.srcSubresource.baseArrayLayer = 0;
+      blit.srcSubresource.layerCount = 1;
+
+      blit.dstOffsets[0] = vk::Offset3D{0, 0, 0};
+      blit.dstOffsets[1] = vk::Offset3D{
+        mip_width > 1 ? mip_width / 2 : 1,
+        mip_height > 1 ? mip_height / 2: 1,
+        1
+      };
+      blit.dstSubresource.aspectMask = vk::ImageAspectFlagBits::eColor;
+      blit.dstSubresource.mipLevel = i;
+      blit.dstSubresource.baseArrayLayer = 0;
+      blit.dstSubresource.layerCount = 1;
+
+      command_buffer.blitImage(image, vk::ImageLayout::eTransferSrcOptimal,
+                               image, vk::ImageLayout::eTransferDstOptimal,
+                               {blit}, vk::Filter::eLinear);
+
+      barrier.oldLayout = vk::ImageLayout::eTransferSrcOptimal;
+      barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+      barrier.srcAccessMask = vk::AccessFlagBits::eTransferRead;
+      barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+      command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                     vk::PipelineStageFlagBits::eFragmentShader,
+                                     static_cast<vk::DependencyFlags>(0),
+                                     {}, {}, {barrier});
+
+      if (mip_width > 1) mip_width /= 2;
+      if (mip_height > 1) mip_height /= 2;
+
+    }
+
+    barrier.subresourceRange.baseMipLevel = mip_levels - 1;
+    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.newLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+    command_buffer.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                   vk::PipelineStageFlagBits::eFragmentShader,
+                                   static_cast<vk::DependencyFlags>(0),
+                                   {}, {}, {barrier});
+
+
+    end_single_time_commands(command_buffer);
+
+    fprintf(stderr, "LOG Created mipmaps\n");
+  }
+
   auto create_texture_image() {
     int tex_width, tex_height, tex_channels;
 
@@ -1148,6 +1251,8 @@ struct window_and_vulkan_state {
     }
 
     vk::DeviceSize image_size = tex_width * tex_height * 4;
+    mip_levels = static_cast<uint32_t>(
+        std::floor(std::log2(std::max(tex_width, tex_height)))) + 1;
 
     auto [staging_buffer, staging_buffer_memory] =
       create_buffer(image_size,
@@ -1164,43 +1269,48 @@ struct window_and_vulkan_state {
     stbi_image_free(pixels);
 
     std::tie(texture_image, texture_image_memory)  =
-      create_image(tex_width, tex_height,
+      create_image(tex_width, tex_height, mip_levels,
                    vk::Format::eR8G8B8A8Srgb,
                    vk::ImageTiling::eOptimal,
                    vk::ImageUsageFlagBits::eTransferDst |
+                   vk::ImageUsageFlagBits::eTransferSrc |
                    vk::ImageUsageFlagBits::eSampled,
                    vk::MemoryPropertyFlagBits::eDeviceLocal);
 
     transition_image_layout(texture_image,
                             vk::Format::eR8G8B8A8Srgb,
                             vk::ImageLayout::eUndefined,
-                            vk::ImageLayout::eTransferDstOptimal);
+                            vk::ImageLayout::eTransferDstOptimal,
+                            mip_levels);
 
     copy_buffer_to_image(staging_buffer,
                          texture_image,
                          static_cast<uint32_t>(tex_width),
                          static_cast<uint32_t>(tex_height));
 
-    transition_image_layout(texture_image, 
-                            vk::Format::eR8G8B8A8Srgb, 
-                            vk::ImageLayout::eTransferDstOptimal, 
-                            vk::ImageLayout::eShaderReadOnlyOptimal);
+    // Will transition to eShaderReadOnlyOptimal while generation mipmaps.
+    generate_mipmaps(texture_image,
+                     vk::Format::eR8G8B8A8Srgb,
+                     tex_width,
+                     tex_height,
+                     mip_levels);
 
     device.destroy(staging_buffer);
+
     device.free(staging_buffer_memory);
-    
   }
 
   vk::ImageView create_image_view(vk::Image image,
                                   vk::Format format,
-                                  vk::ImageAspectFlags aspect_flags) {
+                                  vk::ImageAspectFlags aspect_flags,
+                                  uint32_t mip_levels) {
     vk::ImageViewCreateInfo view_info{};
     view_info.image = image;
     view_info.viewType = vk::ImageViewType::e2D;
     view_info.format = format;
     view_info.subresourceRange.aspectMask = aspect_flags;
     view_info.subresourceRange.baseMipLevel = 0;
-    view_info.subresourceRange.levelCount = 1;
+    view_info.subresourceRange.levelCount = mip_levels;
     view_info.subresourceRange.baseArrayLayer = 0;
     view_info.subresourceRange.layerCount = 1;
     view_info.components = vk::ComponentSwizzle::eIdentity;
@@ -1211,7 +1321,8 @@ struct window_and_vulkan_state {
   auto create_texture_image_view() {
     texture_image_view = create_image_view(texture_image,
                                            vk::Format::eR8G8B8A8Srgb,
-                                           vk::ImageAspectFlagBits::eColor);
+                                           vk::ImageAspectFlagBits::eColor,
+                                           mip_levels);
   }
 
   auto create_texture_sampler() {
@@ -1233,11 +1344,11 @@ struct window_and_vulkan_state {
     sampler_info.mipmapMode = vk::SamplerMipmapMode::eLinear;
     sampler_info.mipLodBias = 0.0f;
     sampler_info.minLod = 0.0f;
-    sampler_info.maxLod = 0.0f;
+    sampler_info.maxLod = static_cast<float>(mip_levels);
 
     texture_sampler = device.createSampler(sampler_info);
   }
-  
+
   vk::Format find_supported_format(const std::vector<vk::Format>& candidates,
                                    vk::ImageTiling tiling,
                                    vk::FormatFeatureFlags features) {
@@ -1246,12 +1357,12 @@ struct window_and_vulkan_state {
       auto props = physical_device.getFormatProperties(format);
 
       if (tiling == vk::ImageTiling::eLinear &&
-          (props.linearTilingFeatures & features) == features) {
+        (props.linearTilingFeatures & features) == features) {
         return format;
       }
 
       if (tiling == vk::ImageTiling::eOptimal &&
-          (props.optimalTilingFeatures & features) == features) {
+        (props.optimalTilingFeatures & features) == features) {
         return format;
       }
     }
@@ -1271,7 +1382,7 @@ struct window_and_vulkan_state {
 
   bool has_stencil_component(vk::Format format) {
     return format == vk::Format::eD32SfloatS8Uint ||
-           format == vk::Format::eD24UnormS8Uint;
+    format == vk::Format::eD24UnormS8Uint;
   }
 
   void load_model() {
@@ -1308,7 +1419,7 @@ struct window_and_vulkan_state {
         };
 
         v.color = { 1.0f, 1.0f, 1.0f };
-        
+
         if (unique_vertices.count(v) == 0) {
           unique_vertices[v] = static_cast<uint32_t>(vertices.size());
           vertices.push_back(v);
@@ -1496,9 +1607,9 @@ struct window_and_vulkan_state {
     vk::SubmitInfo submit_info{};
 
     vk::Semaphore wait_semaphores[] = {
-        image_available_semaphores[current_frame]};
+      image_available_semaphores[current_frame]};
     vk::PipelineStageFlags wait_stages[] = {
-        vk::PipelineStageFlagBits::eColorAttachmentOutput};
+      vk::PipelineStageFlagBits::eColorAttachmentOutput};
 
     submit_info.waitSemaphoreCount = 1;
     submit_info.pWaitSemaphores = wait_semaphores;
@@ -1507,7 +1618,7 @@ struct window_and_vulkan_state {
     submit_info.pCommandBuffers = &command_buffers[current_frame];
 
     vk::Semaphore signal_semaphores[] = {
-        render_finished_semaphores[current_frame]};
+      render_finished_semaphores[current_frame]};
     submit_info.signalSemaphoreCount = 1;
     submit_info.pSignalSemaphores = signal_semaphores;
 
@@ -1540,7 +1651,7 @@ struct window_and_vulkan_state {
     }
 
     current_frame =
-        (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+      (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
   }
 };
 

@@ -2,4 +2,5 @@
 main
 shaders.h
 *.spv
+.cache/*
 

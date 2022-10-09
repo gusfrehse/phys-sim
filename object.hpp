@@ -9,4 +9,6 @@ struct object {
   glm::vec3 get_pos();
 };
 
+
+
 /* vim: set sts=2 ts=2 sw=2 et cc=81: */

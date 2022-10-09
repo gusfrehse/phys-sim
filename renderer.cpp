@@ -1,4 +1,5 @@
 #include "renderer.hpp"
+#include "object.hpp"
 
 #include <algorithm>
 #include <array>
@@ -67,6 +68,16 @@ template<> struct std::hash<vertex> {
   }
 };
 
+void renderer::set_num_objects(uint32_t num) {
+  if (num > num_objects) {
+    // create num - num_objects 
+  } else {
+    // delete num_objects - num
+  }
+
+  num_objects = num;
+}
+
 void renderer::record_command_buffer(vk::CommandBuffer command_buffer,
                                      int image_index) {
   vk::CommandBufferBeginInfo begin_info{};
@@ -109,14 +120,17 @@ void renderer::record_command_buffer(vk::CommandBuffer command_buffer,
 
   command_buffer.bindIndexBuffer(index_buffer, 0, vk::IndexType::eUint32);
 
-  command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
-                                    pipeline_layout,
-                                    0,
-                                    {descriptor_sets[current_frame]},
-                                    {});
+  for (int i = 0; i < num_objects; i++) {
+    command_buffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics,
+                                      pipeline_layout,
+                                      0,
+                                      {descriptor_sets[current_frame]},
+                                      {static_cast<unsigned int>
+                                        (sizeof(glm::mat4) * i)});
 
-  command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()),
-                             1, 0, 0, 0);
+    command_buffer.drawIndexed(static_cast<uint32_t>(indices.size()),
+                               1, 0, 0, 0);
+  }
 
   command_buffer.endRenderPass();
 
@@ -284,7 +298,7 @@ void renderer::transition_image_layout(vk::Image image,
 
   command_buffer.pipelineBarrier(src_stage,
                                  dst_stage,
-                                 static_cast<vk::DependencyFlags>(0), // this is weird hopefully doesn't break anything
+                                 static_cast<vk::DependencyFlags>(0),
                                  {},
                                  {},
                                  {barrier});
@@ -386,18 +400,37 @@ void renderer::create_index_buffers() {
   device.free(staging_buffer_memory);
 }
 
+void renderer::create_objects_uniform_buffer() {
+  // for model matrices and object dependent information.
+
+  // TODO: change the glm::mat4 to something not hardcoded
+  vk::DeviceSize buffer_size = sizeof(glm::mat4) * num_objects;
+
+  object_uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+  object_uniform_buffers_memory.resize(MAX_FRAMES_IN_FLIGHT);
+
+  for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+    std::tie(object_uniform_buffers[i], object_uniform_buffers_memory[i]) =
+      create_buffer(buffer_size,  // TODO:change: sizeof(model) * num_objs prob
+                    vk::BufferUsageFlagBits::eUniformBuffer,
+                    vk::MemoryPropertyFlagBits::eHostVisible |
+                    vk::MemoryPropertyFlagBits::eHostCoherent);
+  }
+}
+
 void renderer::create_uniform_buffers() {
   vk::DeviceSize buffer_size = sizeof(uniform_buffer_object);
 
-  uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
-  uniform_buffers_memory.resize(MAX_FRAMES_IN_FLIGHT);
+  camera_uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
+  camera_uniform_buffers_memory.resize(MAX_FRAMES_IN_FLIGHT);
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    std::tie(uniform_buffers[i], uniform_buffers_memory[i]) = create_buffer(
-        buffer_size,
-        vk::BufferUsageFlagBits::eUniformBuffer,
-        vk::MemoryPropertyFlagBits::eHostVisible |
-        vk::MemoryPropertyFlagBits::eHostCoherent);
+    std::tie(camera_uniform_buffers[i], camera_uniform_buffers_memory[i]) =
+      create_buffer(buffer_size,
+                    vk::BufferUsageFlagBits::eUniformBuffer,
+                    vk::MemoryPropertyFlagBits::eHostVisible |
+                    vk::MemoryPropertyFlagBits::eHostCoherent);
+
   }
 }
 
@@ -417,9 +450,17 @@ void renderer::create_descriptor_set_layout() {
   sampler_layout_binding.stageFlags = vk::ShaderStageFlagBits::eFragment;
   sampler_layout_binding.pImmutableSamplers = nullptr;
 
-  std::array<vk::DescriptorSetLayoutBinding, 2> bindings = {
+  vk::DescriptorSetLayoutBinding object_ubo_layout_binding{};
+  object_ubo_layout_binding.binding = 2;
+  object_ubo_layout_binding.descriptorType = vk::DescriptorType::eUniformBufferDynamic;
+  object_ubo_layout_binding.descriptorCount = 1;
+  object_ubo_layout_binding.stageFlags = vk::ShaderStageFlagBits::eVertex;
+  object_ubo_layout_binding.pImmutableSamplers = nullptr;
+
+  std::array<vk::DescriptorSetLayoutBinding, 3> bindings = {
     ubo_layout_binding,
     sampler_layout_binding,
+    object_ubo_layout_binding
   };
 
   vk::DescriptorSetLayoutCreateInfo layout_info{};
@@ -429,15 +470,20 @@ void renderer::create_descriptor_set_layout() {
   descriptor_set_layout = device.createDescriptorSetLayout(layout_info);
 }
 
-
 void renderer::create_descriptor_pool() {
-  std::array<vk::DescriptorPoolSize, 2> pool_sizes{};
+  std::array<vk::DescriptorPoolSize, 3> pool_sizes{};
 
+  // camera proj view
   pool_sizes[0].type = vk::DescriptorType::eUniformBuffer;
-  pool_sizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+  pool_sizes[0].descriptorCount =
+    static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
   pool_sizes[1].type = vk::DescriptorType::eCombinedImageSampler;
   pool_sizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+  // per object model mat
+  pool_sizes[2].type = vk::DescriptorType::eUniformBufferDynamic;
+  pool_sizes[2].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
   vk::DescriptorPoolCreateInfo pool_info{};
   pool_info.poolSizeCount = pool_sizes.size();
@@ -460,7 +506,7 @@ void renderer::create_descriptor_sets() {
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
     vk::DescriptorBufferInfo buffer_info{};
-    buffer_info.buffer = uniform_buffers[i];
+    buffer_info.buffer = camera_uniform_buffers[i];
     buffer_info.offset = 0;
     buffer_info.range = sizeof(uniform_buffer_object);
 
@@ -469,7 +515,12 @@ void renderer::create_descriptor_sets() {
     image_info.imageView = texture_image_view;
     image_info.sampler = texture_sampler;
 
-    std::array<vk::WriteDescriptorSet, 2> descriptor_writes{};
+    vk::DescriptorBufferInfo objects_buffer_info{};
+    objects_buffer_info.buffer = object_uniform_buffers[i];
+    objects_buffer_info.offset = 0;
+    objects_buffer_info.range = sizeof(glm::mat4);
+
+    std::array<vk::WriteDescriptorSet, 3> descriptor_writes{};
     descriptor_writes[0].dstSet = descriptor_sets[i];
     descriptor_writes[0].dstBinding = 0;
     descriptor_writes[0].dstArrayElement = 0;
@@ -484,6 +535,14 @@ void renderer::create_descriptor_sets() {
       vk::DescriptorType::eCombinedImageSampler;
     descriptor_writes[1].descriptorCount = 1;
     descriptor_writes[1].pImageInfo = &image_info;
+
+    descriptor_writes[2].dstSet = descriptor_sets[i];
+    descriptor_writes[2].dstBinding = 2;
+    descriptor_writes[2].dstArrayElement = 0;
+    descriptor_writes[2].descriptorType =
+      vk::DescriptorType::eUniformBufferDynamic;
+    descriptor_writes[2].descriptorCount = 1;
+    descriptor_writes[2].pBufferInfo = &objects_buffer_info;
 
     device.updateDescriptorSets(descriptor_writes, {});
   }
@@ -921,6 +980,7 @@ void renderer::create_instance() {
 
   // validation layer work
   std::vector<const char *> validation_layers = {
+    "VK_LAYER_KHRONOS_validation",
     "VK_LAYER_KHRONOS_validation"
   };
 
@@ -1436,6 +1496,8 @@ void renderer::init_vulkan() {
 
   create_index_buffers();
 
+  create_objects_uniform_buffer();
+
   create_uniform_buffers();
 
   create_descriptor_pool();
@@ -1445,6 +1507,9 @@ void renderer::init_vulkan() {
   create_command_buffers();
 
   create_sync_objects();
+
+  auto properties = physical_device.getProperties();
+  printf("min alignment uniform buffer: %lu\n", properties.limits.minUniformBufferOffsetAlignment);
 }
 
 void renderer::cleanup() {
@@ -1465,8 +1530,11 @@ void renderer::cleanup() {
   device.free(index_buffer_memory);
 
   for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
-    device.destroy(uniform_buffers[i]);
-    device.free(uniform_buffers_memory[i]);
+    device.destroy(camera_uniform_buffers[i]);
+    device.free(camera_uniform_buffers_memory[i]);
+
+    device.destroy(object_uniform_buffers[i]);
+    device.free(object_uniform_buffers_memory[i]);
   }
 
   device.destroy(descriptor_pool);
@@ -1493,7 +1561,8 @@ void renderer::cleanup() {
   SDL_DestroyWindow(window);
 }
 
-void renderer::update_uniform_buffer(uint32_t current_image) {
+void renderer::update_objects_uniform_buffer(uint32_t current_image) {
+  // TODO: move this function to be an API
   static auto start_time = std::chrono::high_resolution_clock::now();
 
   auto current_time = std::chrono::high_resolution_clock::now();
@@ -1502,11 +1571,35 @@ void renderer::update_uniform_buffer(uint32_t current_image) {
       current_time - start_time).count();
 
   uniform_buffer_object ubo;
-  ubo.model = glm::rotate(glm::mat4(1.0f),
-                          0.5f * time * glm::radians(90.0f),
-                          glm::vec3(0.0f, 0.0f, 1.0f));
+  auto model1 = glm::mat4(1.0f);
+  model1 = glm::translate(model1, glm::vec3(1.5f, 0.0f, 0.0f));
+  model1 = glm::translate(model1, glm::sin(1.34f * time) * glm::vec3(0.0f, 1.5f, 0.0f));
+  model1 = glm::rotate(model1,
+                       0.45f * time * glm::radians(-90.0f),
+                       glm::vec3(0.0f, 0.0f, 1.0f));
 
-  ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f),
+  auto model2 = glm::mat4(1.0f);
+  model2 = glm::translate(model2, glm::vec3(-1.5f, 0.0f, 0.0f));
+  model2 = glm::translate(model2, glm::sin(1.23f * time) * glm::vec3(0.0f, 0.0f, 1.5f));
+  model2 = glm::rotate(model2,
+                       0.3123f * time * glm::radians(90.0f),
+                       glm::vec3(0.0f, 0.0f, 1.0f));
+
+  void *data;
+  data = device.mapMemory(object_uniform_buffers_memory[current_image],
+                          0,
+                          sizeof(glm::mat4) * num_objects);
+
+  glm::mat4 *arr = static_cast<glm::mat4*>(data);
+  arr[0] = model1;
+  arr[1] = model2;
+
+  device.unmapMemory(object_uniform_buffers_memory[current_image]);
+}
+
+void renderer::update_uniform_buffer(uint32_t current_image) {
+  uniform_buffer_object ubo;
+  ubo.view = glm::lookAt(glm::vec3(0.0f, 5.0f, 5.0f),
                          glm::vec3(0.0f),
                          glm::vec3(0.0f, 0.0f, 1.0f));
 
@@ -1519,13 +1612,13 @@ void renderer::update_uniform_buffer(uint32_t current_image) {
   ubo.proj[1][1] *= -1;
 
   void *data;
-  data = device.mapMemory(uniform_buffers_memory[current_image],
+  data = device.mapMemory(camera_uniform_buffers_memory[current_image],
                           0,
                           sizeof(ubo));
 
   memcpy(data, &ubo, sizeof(ubo));
 
-  device.unmapMemory(uniform_buffers_memory[current_image]);
+  device.unmapMemory(camera_uniform_buffers_memory[current_image]);
 }
 
 void renderer::init() { init_vulkan(); }
@@ -1551,10 +1644,15 @@ void renderer::draw_frame() {
     // probably resized the window, need to recreate the swapchain
     //fprintf(stderr, "A recreating swapchain\n");
     recreate_swapchain();
+
+    // draw the frame asked. Maybe not needed, but garantees at least one frame
+    // is drawn.
+    draw_frame();
     return;
   }
 
   update_uniform_buffer(current_frame);
+  update_objects_uniform_buffer(current_frame);
 
   command_buffers[current_frame].reset();
   record_command_buffer(command_buffers[current_frame], next_image);

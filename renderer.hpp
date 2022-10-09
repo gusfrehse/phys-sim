@@ -8,7 +8,6 @@
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
 struct uniform_buffer_object {
-  alignas(16) glm::mat4 model;
   alignas(16) glm::mat4 view;
   alignas(16) glm::mat4 proj;
 };
@@ -68,8 +67,11 @@ struct renderer {
   vk::Buffer index_buffer;
   vk::DeviceMemory index_buffer_memory;
 
-  std::vector<vk::Buffer> uniform_buffers;
-  std::vector<vk::DeviceMemory> uniform_buffers_memory;
+  std::vector<vk::Buffer> camera_uniform_buffers;
+  std::vector<vk::DeviceMemory> camera_uniform_buffers_memory;
+
+  std::vector<vk::Buffer> object_uniform_buffers;
+  std::vector<vk::DeviceMemory> object_uniform_buffers_memory;
 
   vk::DescriptorPool descriptor_pool;
 
@@ -87,7 +89,11 @@ struct renderer {
   vk::DeviceMemory color_image_memory;
   vk::ImageView color_image_view;
 
+  uint32_t num_objects = 0;
+
   uint32_t current_frame = 0;
+
+  void set_num_objects(uint32_t num);
 
   void record_command_buffer(vk::CommandBuffer command_buffer,
                              int image_index);
@@ -119,10 +125,13 @@ struct renderer {
 
   void create_index_buffers();
 
+  void create_objects_uniform_buffer();
+
   void create_uniform_buffers();
 
-  void create_descriptor_set_layout();
+  void create_objects_descriptor_set_layout();
 
+  void create_descriptor_set_layout();
 
   void create_descriptor_pool();
 
@@ -196,6 +205,8 @@ struct renderer {
   void cleanup();
 
   void update_uniform_buffer(uint32_t current_image);
+
+  void update_objects_uniform_buffer(uint32_t current_image);
 
   void init();
 

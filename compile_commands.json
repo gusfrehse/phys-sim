@@ -1,0 +1,58 @@
+[
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-g",
+      "-std=c++20",
+      "-c",
+      "-o",
+      "main.o",
+      "main.cpp"
+    ],
+    "directory": "/home/gus/code/phys-sim",
+    "file": "/home/gus/code/phys-sim/main.cpp",
+    "output": "/home/gus/code/phys-sim/main.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-g",
+      "-std=c++20",
+      "-c",
+      "-o",
+      "renderer.o",
+      "renderer.cpp"
+    ],
+    "directory": "/home/gus/code/phys-sim",
+    "file": "/home/gus/code/phys-sim/renderer.cpp",
+    "output": "/home/gus/code/phys-sim/renderer.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-g",
+      "-std=c++20",
+      "-c",
+      "-o",
+      "vertex.o",
+      "vertex.cpp"
+    ],
+    "directory": "/home/gus/code/phys-sim",
+    "file": "/home/gus/code/phys-sim/vertex.cpp",
+    "output": "/home/gus/code/phys-sim/vertex.o"
+  },
+  {
+    "arguments": [
+      "/usr/bin/g++",
+      "-g",
+      "-std=c++20",
+      "-c",
+      "-o",
+      "object.o",
+      "object.cpp"
+    ],
+    "directory": "/home/gus/code/phys-sim",
+    "file": "/home/gus/code/phys-sim/object.cpp",
+    "output": "/home/gus/code/phys-sim/object.o"
+  }
+]

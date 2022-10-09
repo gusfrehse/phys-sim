@@ -1,17 +1,21 @@
 CC := g++
 CXX := g++
 
-CXXFLAGS := -g
+CXXFLAGS := -g -std=c++20
+LDFLAGS := -g -std=c++20
 LDLIBS := -lSDL2 -lvulkan
 
 EXE := main
-OBJS := main.o
+OBJS := main.o renderer.o vertex.o object.o
 
 SPVS := basic_frag.spv basic_vert.spv
 
 $(EXE) : $(OBJS)
 
-main.o : shaders.h
+main.o : renderer.hpp object.hpp
+renderer.o : renderer.hpp vertex.hpp shaders.h
+vertex.o : vertex.hpp
+object.o : object.hpp
 
 %_frag.spv : %_frag.glsl
 	glslc -fshader-stage=fragment $< -o $@

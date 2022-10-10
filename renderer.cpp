@@ -1561,34 +1561,28 @@ void renderer::cleanup() {
   SDL_DestroyWindow(window);
 }
 
-void renderer::update_objects_uniform_buffer(uint32_t current_image) {
-  // TODO: move this function to be an API
-  static auto start_time = std::chrono::high_resolution_clock::now();
-
-  auto current_time = std::chrono::high_resolution_clock::now();
-
-  float time = std::chrono::duration<float, std::chrono::seconds::period>(
-      current_time - start_time).count();
-
-  void *data;
-  data = device.mapMemory(object_uniform_buffers_memory[current_image],
+glm::mat4* renderer::map_object_uniform() {
+  void *data = device.mapMemory(object_uniform_buffers_memory[current_frame],
                           0,
                           sizeof(glm::mat4) * num_objects);
 
-  glm::mat4 *arr = static_cast<glm::mat4*>(data);
+  return static_cast<glm::mat4*>(data);
+}
 
-  float gap = 1.5f;
+void renderer::unmap_object_uniform(glm::mat4* data) {
+  device.unmapMemory(object_uniform_buffers_memory[current_frame]);
+}
 
-  for (int i = 0; i < num_objects; i++) {
-    arr[i] = glm::mat4(1.0f);
-    arr[i] = glm::translate(arr[i], (i * gap - num_objects * gap / 2.0f) *
-                            glm::vec3(1.5f, 0.0f, 0.0f));
-    arr[i] = glm::translate(arr[i],
-                            glm::sin(0.5f * i * time) * i * 
-                            glm::vec3(0.0f, 0.0f, 0.5f));
-  }
+uniform_buffer_object* renderer::map_camera_uniform() {
+  void *data = device.mapMemory(camera_uniform_buffers_memory[current_frame],
+                          0,
+                          sizeof(uniform_buffer_object));
 
-  device.unmapMemory(object_uniform_buffers_memory[current_image]);
+  return static_cast<uniform_buffer_object*>(data);
+}
+
+void renderer::unmap_camera_uniform(uniform_buffer_object* data) {
+  device.unmapMemory(camera_uniform_buffers_memory[current_frame]);
 }
 
 void renderer::update_uniform_buffer(uint32_t current_image) {
@@ -1647,9 +1641,6 @@ void renderer::draw_frame() {
     return;
   }
 
-  update_uniform_buffer(current_frame);
-  update_objects_uniform_buffer(current_frame);
-
   command_buffers[current_frame].reset();
   record_command_buffer(command_buffers[current_frame], next_image);
 
@@ -1702,5 +1693,14 @@ void renderer::draw_frame() {
   current_frame =
     (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
+
+uint32_t renderer::get_width() {
+  return swapchain_image_extent.width;
+}
+
+uint32_t renderer::get_height() {
+  return swapchain_image_extent.height;
+}
+
 
 /* vim: set sts=2 ts=2 sw=2 et cc=81: */

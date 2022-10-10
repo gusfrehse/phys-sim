@@ -208,6 +208,18 @@ struct renderer {
 
   void update_objects_uniform_buffer(uint32_t current_image);
 
+  uniform_buffer_object* map_camera_uniform();
+
+  void unmap_camera_uniform(uniform_buffer_object* data);
+
+  glm::mat4* map_object_uniform();
+
+  void unmap_object_uniform(glm::mat4* data);
+
+  uint32_t get_width();
+
+  uint32_t get_height();
+
   void init();
 
   void draw_frame();

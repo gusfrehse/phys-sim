@@ -4,7 +4,7 @@
 
 #include "object.hpp"
 
-const uint32_t NUM_OBJECTS = 2; 
+const uint32_t NUM_OBJECTS = 20;
 
 auto main() -> int {
   renderer render;

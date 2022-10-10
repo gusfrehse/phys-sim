@@ -1570,44 +1570,40 @@ void renderer::update_objects_uniform_buffer(uint32_t current_image) {
   float time = std::chrono::duration<float, std::chrono::seconds::period>(
       current_time - start_time).count();
 
-  uniform_buffer_object ubo;
-  auto model1 = glm::mat4(1.0f);
-  model1 = glm::translate(model1, glm::vec3(1.5f, 0.0f, 0.0f));
-  model1 = glm::translate(model1, glm::sin(1.34f * time) * glm::vec3(0.0f, 1.5f, 0.0f));
-  model1 = glm::rotate(model1,
-                       0.45f * time * glm::radians(-90.0f),
-                       glm::vec3(0.0f, 0.0f, 1.0f));
-
-  auto model2 = glm::mat4(1.0f);
-  model2 = glm::translate(model2, glm::vec3(-1.5f, 0.0f, 0.0f));
-  model2 = glm::translate(model2, glm::sin(1.23f * time) * glm::vec3(0.0f, 0.0f, 1.5f));
-  model2 = glm::rotate(model2,
-                       0.3123f * time * glm::radians(90.0f),
-                       glm::vec3(0.0f, 0.0f, 1.0f));
-
   void *data;
   data = device.mapMemory(object_uniform_buffers_memory[current_image],
                           0,
                           sizeof(glm::mat4) * num_objects);
 
   glm::mat4 *arr = static_cast<glm::mat4*>(data);
-  arr[0] = model1;
-  arr[1] = model2;
+
+  float gap = 1.5f;
+
+  for (int i = 0; i < num_objects; i++) {
+    arr[i] = glm::mat4(1.0f);
+    arr[i] = glm::translate(arr[i], (i * gap - num_objects * gap / 2.0f) *
+                            glm::vec3(1.5f, 0.0f, 0.0f));
+    arr[i] = glm::translate(arr[i],
+                            glm::sin(0.5f * i * time) * i * 
+                            glm::vec3(0.0f, 0.0f, 0.5f));
+  }
 
   device.unmapMemory(object_uniform_buffers_memory[current_image]);
 }
 
 void renderer::update_uniform_buffer(uint32_t current_image) {
   uniform_buffer_object ubo;
-  ubo.view = glm::lookAt(glm::vec3(0.0f, 5.0f, 5.0f),
+  ubo.view = glm::lookAt(glm::vec3(0.0f,
+                                   1.2f * (float)num_objects,
+                                   1.2f * (float)num_objects),
                          glm::vec3(0.0f),
                          glm::vec3(0.0f, 0.0f, 1.0f));
 
   ubo.proj = glm::perspective(glm::radians(45.0f),
                               swapchain_image_extent.width /
                               (float) swapchain_image_extent.height,
-                              0.1f,
-                              10.0f);
+                              0.001f,
+                              10000.0f);
 
   ubo.proj[1][1] *= -1;
 

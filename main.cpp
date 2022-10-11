@@ -1,5 +1,9 @@
-#include <SDL2/SDL_keycode.h>
+#include <chrono>
 #include <cstdio>
+#include <iomanip>
+
+#include <SDL2/SDL_keycode.h>
+#include <SDL2/SDL_video.h>
 #include <glm/ext/matrix_clip_space.hpp>
 #include <unordered_map>
 
@@ -13,7 +17,7 @@
 
 #include "object.hpp"
 
-const uint32_t NUM_OBJECTS = 20;
+const uint32_t NUM_OBJECTS = 100;
 
 std::unordered_map<SDL_Keycode, bool> keys;
 
@@ -56,6 +60,23 @@ void update_camera(uniform_buffer_object *cam, renderer &render) {
   cam->proj[1][1] *= -1;
 }
 
+void show_frame_time(SDL_Window *w,
+                     float dt_acc,
+                     unsigned long long num_frames) {
+  std::stringstream ss;
+  auto averaged_dt = dt_acc / (float) num_frames;
+  ss <<
+    "average frame time: " <<
+    std::setprecision(3) <<
+    averaged_dt <<
+    "ms fps: " << 
+    std::setprecision(1) <<
+    std::fixed <<
+    1000.0f / averaged_dt;
+
+  SDL_SetWindowTitle(w, ss.str().c_str());
+}
+
 auto main() -> int {
   renderer render;
   render.set_num_objects(NUM_OBJECTS);
@@ -63,12 +84,30 @@ auto main() -> int {
 
   //std::vector<object> objects(NUM_OBJECTS, { .model = glm::mat4(1.0f)});
 
+  auto prev_t = std::chrono::steady_clock::now();
+  auto curr_t = std::chrono::steady_clock::now();
+
+  unsigned long long frame = 0;
+  float dt_acc = 0.0f;
+  const unsigned long long num_frames_for_average_time = 100;
+
   // SDL_Delay(1000);
   bool running = true;
 
   while (running) {
-    SDL_Event event;
+    curr_t = std::chrono::steady_clock::now();
+    auto dt = std::chrono::duration<float, std::chrono::milliseconds::period>(curr_t - prev_t).count();
+    prev_t = curr_t;
 
+    dt_acc += dt;
+
+    if (frame % num_frames_for_average_time == 0) {
+      show_frame_time(render.window, dt_acc, num_frames_for_average_time);
+      dt_acc = 0;
+    }
+
+
+    SDL_Event event;
     while (SDL_PollEvent(&event)) {
       if (event.type == SDL_QUIT) {
         running = false;
@@ -85,9 +124,6 @@ auto main() -> int {
     // TODO: :P
 
     // update uniforms
-    render.update_uniform_buffer(render.current_frame);
-    //render.update_objects_uniform_buffer(render.current_frame);
-
     auto object_uniform = render.map_object_uniform();
     update_objects(object_uniform);
     render.unmap_object_uniform(object_uniform);
@@ -97,6 +133,8 @@ auto main() -> int {
     render.unmap_camera_uniform(camera_uniform);
 
     render.draw_frame();
+
+    frame++;
   }
 
   render.cleanup();

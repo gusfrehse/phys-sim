@@ -40,16 +40,18 @@ void update_objects(glm::mat4 *data) {
     data[i] = glm::mat4(1.0f);
     data[i] = glm::translate(data[i], (i * gap - NUM_OBJECTS * gap / 2.0f) *
                             glm::vec3(1.5f, 0.0f, 0.0f));
+    data[i] = glm::translate(data[i], glm::vec3(0.0f, 0.0f, -1.0f));
   }
-
 }
 
-void update_camera(uniform_buffer_object *cam, renderer &render) {
+void update_camera(camera_uniform *cam, renderer &render) {
   cam->view = glm::lookAt(glm::vec3(0.0f,
                                     1.2f * (float)NUM_OBJECTS,
                                     1.2f * (float)NUM_OBJECTS),
                           glm::vec3(0.0f),
                           glm::vec3(0.0f, 0.0f, 1.0f));
+
+  cam->view = glm::mat4(1.0f);
 
   cam->proj = glm::perspective(glm::radians(45.0f),
                                render.get_width() /
@@ -57,7 +59,18 @@ void update_camera(uniform_buffer_object *cam, renderer &render) {
                                0.001f,
                                10000.0f);
 
-  cam->proj[1][1] *= -1;
+  float w_h = render.get_width() / (float) render.get_height();
+
+  cam->proj = glm::ortho<float>(NUM_OBJECTS, -(float)NUM_OBJECTS,
+                                NUM_OBJECTS / w_h, -(float)NUM_OBJECTS / w_h,
+                                -1.0f, 1.0f);
+
+  //cam->proj = glm::ortho<float>(-1.0f, 1.0f,
+  //                              -1.0f, 1.0f,
+  //                              -1.0f,
+  //                              1.0f);
+
+  //cam->proj[1][1] *= -1;
 }
 
 void show_frame_time(SDL_Window *w,
@@ -77,12 +90,10 @@ void show_frame_time(SDL_Window *w,
   SDL_SetWindowTitle(w, ss.str().c_str());
 }
 
-auto main() -> int {
+int main(int argc, char **argv) {
   renderer render;
   render.set_num_objects(NUM_OBJECTS);
   render.init();
-
-  //std::vector<object> objects(NUM_OBJECTS, { .model = glm::mat4(1.0f)});
 
   auto prev_t = std::chrono::steady_clock::now();
   auto curr_t = std::chrono::steady_clock::now();
@@ -91,21 +102,20 @@ auto main() -> int {
   float dt_acc = 0.0f;
   const unsigned long long num_frames_for_average_time = 100;
 
-  // SDL_Delay(1000);
   bool running = true;
 
   while (running) {
+    // dynamic delta time calculation
     curr_t = std::chrono::steady_clock::now();
-    auto dt = std::chrono::duration<float, std::chrono::milliseconds::period>(curr_t - prev_t).count();
+    auto dt = std::chrono::duration<float, std::milli>(curr_t - prev_t).count();
     prev_t = curr_t;
 
     dt_acc += dt;
 
     if (frame % num_frames_for_average_time == 0) {
-      show_frame_time(render.window, dt_acc, num_frames_for_average_time);
+      show_frame_time(render.get_window(), dt_acc, num_frames_for_average_time);
       dt_acc = 0;
     }
-
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {

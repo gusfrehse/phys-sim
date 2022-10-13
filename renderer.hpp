@@ -7,93 +7,96 @@
 
 const int MAX_FRAMES_IN_FLIGHT = 2;
 
-struct uniform_buffer_object {
+struct camera_uniform {
   alignas(16) glm::mat4 view;
   alignas(16) glm::mat4 proj;
+};
+
+struct object_uniform {
+  alignas(16) glm::mat4 model;
 };
 
 const std::string MODEL_PATH = "models/viking_room.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 struct renderer {
-  SDL_Window *window;
+private:
+  SDL_Window *m_window;
   struct {
     int width = 800;
     int height = 450;
-  } window_dimensions;
+  } m_window_dimensions;
 
-  vk::Instance instance;
-  vk::Device device;
-  vk::PhysicalDevice physical_device;
-  vk::SurfaceKHR surface;
+  vk::Instance m_instance;
+  vk::Device m_device;
+  vk::PhysicalDevice m_physical_device;
+  vk::SurfaceKHR m_surface;
 
-  vk::SwapchainKHR swapchain;
-  vk::Format swapchain_image_format;
-  vk::Extent2D swapchain_image_extent;
+  vk::SwapchainKHR m_swapchain;
+  vk::Format m_swapchain_image_format;
+  vk::Extent2D m_swapchain_image_extent;
 
-  std::vector<vk::Image> swapchain_images;
-  std::vector<vk::ImageView> swapchain_image_views;
+  std::vector<vk::Image> m_swapchain_images;
+  std::vector<vk::ImageView> m_swapchain_image_views;
 
-  std::vector<vk::Framebuffer> swapchain_framebuffers;
+  std::vector<vk::Framebuffer> m_swapchain_framebuffers;
 
-  vk::Image depth_image;
-  vk::DeviceMemory depth_image_memory;
-  vk::ImageView depth_image_view;
+  vk::Image m_depth_image;
+  vk::DeviceMemory m_depth_image_memory;
+  vk::ImageView m_depth_image_view;
 
-  std::optional<uint32_t> queue_family_index = std::nullopt;
+  std::optional<uint32_t> m_queue_family_index = std::nullopt;
 
-  vk::Queue queue;
+  vk::Queue m_queue;
 
-  vk::RenderPass renderpass;
-  vk::DescriptorSetLayout descriptor_set_layout;
-  vk::PipelineLayout pipeline_layout;
-  vk::Pipeline graphics_pipeline;
+  vk::RenderPass m_renderpass;
+  vk::DescriptorSetLayout m_descriptor_set_layout;
+  vk::PipelineLayout m_pipeline_layout;
+  vk::Pipeline m_graphics_pipeline;
 
-  vk::CommandPool command_pool;
-  std::vector<vk::CommandBuffer> command_buffers;
+  vk::CommandPool m_command_pool;
+  std::vector<vk::CommandBuffer> m_command_buffers;
 
-  vk::CommandPool alloc_command_pool;
+  vk::CommandPool m_alloc_command_pool;
 
-  std::vector<vk::Semaphore> image_available_semaphores;
-  std::vector<vk::Semaphore> render_finished_semaphores;
-  std::vector<vk::Fence> in_flight_fences;
+  std::vector<vk::Semaphore> m_image_available_semaphores;
+  std::vector<vk::Semaphore> m_render_finished_semaphores;
+  std::vector<vk::Fence> m_in_flight_fences;
 
-  std::vector<vertex> vertices;
-  std::vector<uint32_t> indices;
+  std::vector<vertex> m_vertices;
+  std::vector<uint32_t> m_indices;
 
-  vk::Buffer vertex_buffer;
-  vk::DeviceMemory vertex_buffer_memory;
+  vk::Buffer m_vertex_buffer;
+  vk::DeviceMemory m_vertex_buffer_memory;
 
-  vk::Buffer index_buffer;
-  vk::DeviceMemory index_buffer_memory;
+  vk::Buffer m_index_buffer;
+  vk::DeviceMemory m_index_buffer_memory;
 
-  std::vector<vk::Buffer> camera_uniform_buffers;
-  std::vector<vk::DeviceMemory> camera_uniform_buffers_memory;
+  std::vector<vk::Buffer> m_camera_uniform_buffers;
+  std::vector<vk::DeviceMemory> m_camera_uniform_buffers_memory;
 
-  std::vector<vk::Buffer> object_uniform_buffers;
-  std::vector<vk::DeviceMemory> object_uniform_buffers_memory;
+  std::vector<vk::Buffer> m_object_uniform_buffers;
+  std::vector<vk::DeviceMemory> m_object_uniform_buffers_memory;
 
-  vk::DescriptorPool descriptor_pool;
+  vk::DescriptorPool m_descriptor_pool;
 
-  std::vector<vk::DescriptorSet> descriptor_sets;
+  std::vector<vk::DescriptorSet> m_descriptor_sets;
 
-  uint32_t mip_levels;
-  vk::Image texture_image;
-  vk::DeviceMemory texture_image_memory;
-  vk::ImageView texture_image_view;
-  vk::Sampler texture_sampler;
+  uint32_t m_mip_levels;
+  vk::Image m_texture_image;
+  vk::DeviceMemory m_texture_image_memory;
+  vk::ImageView m_texture_image_view;
+  vk::Sampler m_texture_sampler;
 
-  vk::SampleCountFlagBits msaa_samples = vk::SampleCountFlagBits::e1;
+  vk::SampleCountFlagBits m_msaa_samples = vk::SampleCountFlagBits::e1;
 
-  vk::Image color_image;
-  vk::DeviceMemory color_image_memory;
-  vk::ImageView color_image_view;
+  vk::Image m_color_image;
+  vk::DeviceMemory m_color_image_memory;
+  vk::ImageView m_color_image_view;
 
-  uint32_t num_objects = 0;
+  uint32_t m_num_objects = 0;
 
-  uint32_t current_frame = 0;
-
-  void set_num_objects(uint32_t num);
+  uint32_t m_current_frame = 0;
 
   void record_command_buffer(vk::CommandBuffer command_buffer,
                              int image_index);
@@ -202,15 +205,10 @@ struct renderer {
 
   void init_vulkan();
 
-  void cleanup();
+public:
+  camera_uniform* map_camera_uniform();
 
-  void update_uniform_buffer(uint32_t current_image);
-
-  void update_objects_uniform_buffer(uint32_t current_image);
-
-  uniform_buffer_object* map_camera_uniform();
-
-  void unmap_camera_uniform(uniform_buffer_object* data);
+  void unmap_camera_uniform(camera_uniform* data);
 
   glm::mat4* map_object_uniform();
 
@@ -220,9 +218,15 @@ struct renderer {
 
   uint32_t get_height();
 
+  SDL_Window* get_window();
+
   void init();
 
   void draw_frame();
+
+  void set_num_objects(uint32_t num);
+
+  void cleanup();
 };
 
 

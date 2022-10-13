@@ -3,6 +3,7 @@ configurations { "Release", "Debug" }
 
 project "project"
 architecture "x86_64"
+cppdialect "C++20"
 location "build"
 kind "ConsoleApp"
 files { "*.hpp", "*.cpp" }

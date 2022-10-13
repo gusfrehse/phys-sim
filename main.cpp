@@ -1,21 +1,24 @@
 #include <chrono>
 #include <cstdio>
+#include <glm/geometric.hpp>
 #include <iomanip>
 
 #include <SDL2/SDL_keycode.h>
 #include <SDL2/SDL_video.h>
-#include <glm/ext/matrix_clip_space.hpp>
 #include <unordered_map>
 
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_events.h>
 
 #include <glm/ext/matrix_transform.hpp>
+#include <glm/ext/matrix_clip_space.hpp>
 #include <glm/trigonometric.hpp>
 
 #include "renderer.hpp"
 
 #include "object.hpp"
+
+#include "camera.hpp" 
 
 const uint32_t NUM_OBJECTS = 100;
 
@@ -44,33 +47,13 @@ void update_objects(glm::mat4 *data) {
   }
 }
 
-void update_camera(camera_uniform *cam, renderer &render) {
-  cam->view = glm::lookAt(glm::vec3(0.0f,
-                                    1.2f * (float)NUM_OBJECTS,
-                                    1.2f * (float)NUM_OBJECTS),
-                          glm::vec3(0.0f),
-                          glm::vec3(0.0f, 0.0f, 1.0f));
+void update_camera(orthographic_camera& cam,
+                   camera_uniform *cam_uniform,
+                   const renderer &render) {
 
-  cam->view = glm::mat4(1.0f);
-
-  cam->proj = glm::perspective(glm::radians(45.0f),
-                               render.get_width() /
-                               (float) render.get_height(),
-                               0.001f,
-                               10000.0f);
-
-  float w_h = render.get_width() / (float) render.get_height();
-
-  cam->proj = glm::ortho<float>(NUM_OBJECTS, -(float)NUM_OBJECTS,
-                                NUM_OBJECTS / w_h, -(float)NUM_OBJECTS / w_h,
-                                -1.0f, 1.0f);
-
-  //cam->proj = glm::ortho<float>(-1.0f, 1.0f,
-  //                              -1.0f, 1.0f,
-  //                              -1.0f,
-  //                              1.0f);
-
-  //cam->proj[1][1] *= -1;
+  cam_uniform->view = cam.get_view_matrix();
+  cam_uniform->proj = cam.get_projection_matrix();
+  //cam_uniform->proj[1][1] *= -1;
 }
 
 void show_frame_time(SDL_Window *w,
@@ -94,6 +77,10 @@ int main(int argc, char **argv) {
   renderer render;
   render.set_num_objects(NUM_OBJECTS);
   render.init();
+
+  float aspect_ratio = render.get_width() / (float) render.get_height();
+
+  orthographic_camera cam(aspect_ratio);
 
   auto prev_t = std::chrono::steady_clock::now();
   auto curr_t = std::chrono::steady_clock::now();
@@ -126,12 +113,48 @@ int main(int argc, char **argv) {
       handle_event(event);
     }
 
-    if (keys[SDLK_SPACE]) {
-      printf("space pressed\n");
-    }
-
     // update physics
     // TODO: :P
+
+    // update camera
+    glm::vec3 pos = cam.get_position();
+
+    float speed = 0.005f;
+    glm::vec3 velocity(0.0f);
+
+    float zoom = 1.0f;
+    float zoom_speed = 1.005f;
+
+    if (keys[SDLK_w]) {
+      velocity += glm::vec3(0.0f, 1.0f,  0.0f);
+    }
+
+    if (keys[SDLK_s])  {
+      velocity += glm::vec3(0.0f, -1.0f,  0.0f);
+    }
+
+    if (keys[SDLK_a])  {
+      velocity += glm::vec3(-1.0f, 0.0f,  0.0f);
+    }
+
+    if (keys[SDLK_d]) {
+      velocity += glm::vec3(1.0f,  0.0f,  0.0f);
+    }
+
+    if (keys[SDLK_LSHIFT]) {
+      zoom *= zoom_speed;
+    }
+
+    if (keys[SDLK_SPACE]) {
+      zoom /= zoom_speed;
+    }
+
+    cam.set_zoom(cam.get_zoom() * pow(zoom, dt));
+
+    if (velocity != glm::vec3(0.0f)) {
+      cam.set_position(pos + dt * speed * cam.get_zoom() * glm::normalize(velocity));
+    }
+
 
     // update uniforms
     auto object_uniform = render.map_object_uniform();
@@ -139,7 +162,7 @@ int main(int argc, char **argv) {
     render.unmap_object_uniform(object_uniform);
 
     auto camera_uniform = render.map_camera_uniform();
-    update_camera(camera_uniform, render);
+    update_camera(cam, camera_uniform, render);
     render.unmap_camera_uniform(camera_uniform);
 
     render.draw_frame();

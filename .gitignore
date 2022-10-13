@@ -3,4 +3,7 @@ main
 shaders.h
 *.spv
 .cache/*
+build/*
+Makefile
+*.sln
 

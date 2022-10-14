@@ -5,17 +5,24 @@
 
 class camera {
 protected:
+  float m_aspect_ratio;
   glm::vec3 m_position;
   glm::mat4 m_projection_matrix;
   glm::mat4 m_view_matrix;
   glm::mat4 m_projection_view_matrix;
 
   virtual void recalculate_view_matrix() = 0;
+  virtual void recalculate_proj_matrix() = 0;
 
   camera();
 
 public:
   void set_position(const glm::vec3& pos);
+  void set_aspect_ratio(const float aspect_ratio);
+
+  const float get_aspect_ratio() const {
+    return m_aspect_ratio;
+  }
 
   const glm::vec3& get_position() const {
     return m_position;
@@ -39,6 +46,7 @@ private:
   float m_zoom;
 
   void recalculate_view_matrix() override;
+  void recalculate_proj_matrix() override;
 
 public:
   float get_zoom() const { return m_zoom; }

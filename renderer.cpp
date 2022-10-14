@@ -1606,7 +1606,6 @@ void renderer::draw_frame() {
     next_image = next_image_result.value;
   } catch (vk::OutOfDateKHRError const &e) {
     // probably resized the window, need to recreate the swapchain
-    //fprintf(stderr, "A recreating swapchain\n");
     recreate_swapchain();
 
     // draw the frame asked. Maybe not needed, but garantees at least one frame
@@ -1632,7 +1631,9 @@ void renderer::draw_frame() {
   submit_info.pCommandBuffers = &m_command_buffers[m_current_frame];
 
   vk::Semaphore signal_semaphores[] = {
-    m_render_finished_semaphores[m_current_frame]};
+    m_render_finished_semaphores[m_current_frame]
+  };
+
   submit_info.signalSemaphoreCount = 1;
   submit_info.pSignalSemaphores = signal_semaphores;
 
@@ -1668,15 +1669,15 @@ void renderer::draw_frame() {
     (m_current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
 }
 
-uint32_t renderer::get_width() {
+uint32_t renderer::get_width() const {
   return m_swapchain_image_extent.width;
 }
 
-uint32_t renderer::get_height() {
+uint32_t renderer::get_height() const {
   return m_swapchain_image_extent.height;
 }
 
-SDL_Window* renderer::get_window() {
+SDL_Window* renderer::get_window() const {
   return m_window;
 }
 

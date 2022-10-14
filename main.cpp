@@ -24,7 +24,8 @@ const uint32_t NUM_OBJECTS = 100;
 
 std::unordered_map<SDL_Keycode, bool> keys;
 
-auto handle_event(SDL_Event e) {
+auto handle_event(SDL_Event e, orthographic_camera& cam,
+                  const renderer& render) {
   switch (e.type) {
     case SDL_KEYDOWN:
       keys[e.key.keysym.sym] = 1;
@@ -32,6 +33,14 @@ auto handle_event(SDL_Event e) {
 
     case SDL_KEYUP:
       keys[e.key.keysym.sym] = 0;
+      break;
+
+    case SDL_WINDOWEVENT:
+      switch (e.window.event) {
+        case SDL_WINDOWEVENT_SIZE_CHANGED:
+          cam.set_aspect_ratio(render.get_width() / (float)render.get_height());
+        break;
+      }
       break;
   }
 }
@@ -110,7 +119,7 @@ int main(int argc, char **argv) {
         running = false;
       }
 
-      handle_event(event);
+      handle_event(event, cam, render);
     }
 
     // update physics

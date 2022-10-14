@@ -214,11 +214,11 @@ public:
 
   void unmap_object_uniform(glm::mat4* data);
 
-  uint32_t get_width();
+  uint32_t get_width() const;
 
-  uint32_t get_height();
+  uint32_t get_height() const;
 
-  SDL_Window* get_window();
+  SDL_Window* get_window() const;
 
   void init();
 

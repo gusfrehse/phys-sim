@@ -8,6 +8,7 @@ camera::camera() :
   m_position(0.0f),
   m_projection_matrix(1.0f),
   m_view_matrix(1.0f),
+  m_aspect_ratio(1.0f),
   m_projection_view_matrix(1.0f) {}
 
 void camera::set_position(const glm::vec3 &pos) {
@@ -15,11 +16,23 @@ void camera::set_position(const glm::vec3 &pos) {
   recalculate_view_matrix();
 }
 
+void camera::set_aspect_ratio(const float aspect_ratio) {
+  m_aspect_ratio = aspect_ratio;
+  recalculate_proj_matrix();
+}
+
 orthographic_camera::orthographic_camera() :
   orthographic_camera(1.0f) {}
 
 orthographic_camera::orthographic_camera(float aspect_ratio) : m_zoom(1.0f) {
-  m_projection_matrix = glm::ortho(-aspect_ratio, aspect_ratio, 1.0f, -1.0f);
+  m_aspect_ratio = aspect_ratio;
+  recalculate_proj_matrix();
+}
+
+void orthographic_camera::recalculate_proj_matrix() {
+  m_projection_matrix = glm::ortho(-m_aspect_ratio,
+                                   m_aspect_ratio,
+                                   1.0f, -1.0f);
   m_projection_view_matrix = m_projection_matrix * m_view_matrix;
 }
 

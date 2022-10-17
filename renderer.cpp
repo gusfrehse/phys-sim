@@ -1,5 +1,4 @@
 #include "renderer.hpp"
-#include "object.hpp"
 
 #include <algorithm>
 #include <array>
@@ -1509,7 +1508,8 @@ void renderer::init_vulkan() {
   create_sync_objects();
 
   auto properties = m_physical_device.getProperties();
-  printf("min alignment uniform buffer: %lu\n", properties.limits.minUniformBufferOffsetAlignment);
+  printf("min alignment uniform buffer: %lu\n",
+         properties.limits.minUniformBufferOffsetAlignment);
 }
 
 void renderer::cleanup() {

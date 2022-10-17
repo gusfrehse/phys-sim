@@ -16,11 +16,11 @@
 
 #include "renderer.hpp"
 
-#include "object.hpp"
-
 #include "camera.hpp" 
 
-const uint32_t NUM_OBJECTS = 100;
+#include "physics.hpp"
+
+const uint32_t NUM_OBJECTS = 3;
 
 std::unordered_map<SDL_Keycode, bool> keys;
 
@@ -45,14 +45,10 @@ auto handle_event(SDL_Event e, orthographic_camera& cam,
   }
 }
 
-void update_objects(glm::mat4 *data) {
-  float gap = 2.0f;
-
+void update_objects(const physics& phys, glm::mat4 *data) {
   for (int i = 0; i < NUM_OBJECTS; i++) {
     data[i] = glm::mat4(1.0f);
-    data[i] = glm::translate(data[i], (i * gap - NUM_OBJECTS * gap / 2.0f) *
-                            glm::vec3(1.5f, 0.0f, 0.0f));
-    data[i] = glm::translate(data[i], glm::vec3(0.0f, 0.0f, -1.0f));
+    data[i] = glm::translate(data[i], phys.get_position(i));
   }
 }
 
@@ -87,9 +83,31 @@ int main(int argc, char **argv) {
   render.set_num_objects(NUM_OBJECTS);
   render.init();
 
+  physics phys({
+    object {
+      .position = glm::vec3(0.0f, 1.0f, -1.0f),
+      .velocity = glm::vec3(0.0f, 0.0f, 0.0f),
+      .force = glm::vec3(0.0f),
+      .mass = 1.0f,
+    },
+    object {
+      .position = glm::vec3(-10.0f, 1.0f, -1.0f),
+      .velocity = glm::vec3(1e-3f, 0.0f, 0.0f),
+      .force = glm::vec3(0.0f),
+      .mass = 1.0f,
+    },
+    object {
+      .position = glm::vec3(10.0f, 1.0f, -1.0f),
+      .velocity = glm::vec3(-1e-3f, 0.0f, 0.0f),
+      .force = glm::vec3(0.0f),
+      .mass = 1.0f,
+    },
+  });
+
   float aspect_ratio = render.get_width() / (float) render.get_height();
 
   orthographic_camera cam(aspect_ratio);
+  cam.set_zoom(4.00);
 
   auto prev_t = std::chrono::steady_clock::now();
   auto curr_t = std::chrono::steady_clock::now();
@@ -123,7 +141,7 @@ int main(int argc, char **argv) {
     }
 
     // update physics
-    // TODO: :P
+    phys.time_step(dt);
 
     // update camera
     glm::vec3 pos = cam.get_position();
@@ -161,13 +179,14 @@ int main(int argc, char **argv) {
     cam.set_zoom(cam.get_zoom() * pow(zoom, dt));
 
     if (velocity != glm::vec3(0.0f)) {
-      cam.set_position(pos + dt * speed * cam.get_zoom() * glm::normalize(velocity));
+      cam.set_position(pos +
+                       dt * speed * cam.get_zoom() * glm::normalize(velocity));
     }
 
 
     // update uniforms
     auto object_uniform = render.map_object_uniform();
-    update_objects(object_uniform);
+    update_objects(phys, object_uniform);
     render.unmap_object_uniform(object_uniform);
 
     auto camera_uniform = render.map_camera_uniform();

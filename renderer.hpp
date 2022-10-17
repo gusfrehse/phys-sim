@@ -2,6 +2,7 @@
 
 #include <SDL2/SDL.h>
 #include <glm/matrix.hpp>
+#include <vulkan/vulkan.hpp>
 
 #include "vertex.hpp"
 

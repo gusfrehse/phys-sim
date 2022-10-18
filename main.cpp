@@ -45,17 +45,20 @@ auto handle_event(SDL_Event e, orthographic_camera& cam,
   }
 }
 
-void update_objects(const physics& phys, glm::mat4 *data) {
+void update_objects(const renderer& render, const physics& phys, uint8_t *data) {
+  size_t alignment = render.get_uniform_alignment();
   for (int i = 0; i < NUM_OBJECTS; i++) {
-    data[i] = glm::mat4(1.0f);
-    data[i] = glm::translate(data[i], phys.get_position(i));
+    glm::mat4* curr = reinterpret_cast<glm::mat4*>(data + i * alignment);
+    *curr = glm::mat4(1.0f);
+    *curr = glm::translate(*curr, phys.get_position(i));
   }
 }
 
 void update_camera(orthographic_camera& cam,
-                   camera_uniform *cam_uniform,
+                   uint8_t *uniform,
                    const renderer &render) {
-
+  
+  camera_uniform *cam_uniform = reinterpret_cast<camera_uniform*>(uniform);
   cam_uniform->view = cam.get_view_matrix();
   cam_uniform->proj = cam.get_projection_matrix();
   //cam_uniform->proj[1][1] *= -1;
@@ -186,12 +189,12 @@ int main(int argc, char **argv) {
 
     // update uniforms
     auto object_uniform = render.map_object_uniform();
-    update_objects(phys, object_uniform);
-    render.unmap_object_uniform(object_uniform);
+    update_objects(render, phys, object_uniform);
+    render.unmap_object_uniform();
 
     auto camera_uniform = render.map_camera_uniform();
     update_camera(cam, camera_uniform, render);
-    render.unmap_camera_uniform(camera_uniform);
+    render.unmap_camera_uniform();
 
     render.draw_frame();
 

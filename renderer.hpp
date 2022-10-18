@@ -79,6 +79,8 @@ private:
   std::vector<vk::Buffer> m_object_uniform_buffers;
   std::vector<vk::DeviceMemory> m_object_uniform_buffers_memory;
 
+  size_t m_dynamic_alignment;
+
   vk::DescriptorPool m_descriptor_pool;
 
   std::vector<vk::DescriptorSet> m_descriptor_sets;
@@ -207,19 +209,21 @@ private:
   void init_vulkan();
 
 public:
-  camera_uniform* map_camera_uniform();
+  uint8_t* map_camera_uniform();
 
-  void unmap_camera_uniform(camera_uniform* data);
+  void unmap_camera_uniform();
 
-  glm::mat4* map_object_uniform();
+  uint8_t* map_object_uniform();
 
-  void unmap_object_uniform(glm::mat4* data);
+  void unmap_object_uniform();
 
   uint32_t get_width() const;
 
   uint32_t get_height() const;
 
   SDL_Window* get_window() const;
+
+  size_t get_uniform_alignment() const;
 
   void init();
 

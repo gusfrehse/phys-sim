@@ -125,7 +125,7 @@ void renderer::record_command_buffer(vk::CommandBuffer command_buffer,
                                       0,
                                       {m_descriptor_sets[m_current_frame]},
                                       {static_cast<unsigned int>
-                                        (sizeof(glm::mat4) * i)});
+                                        (m_dynamic_alignment * i)});
 
     command_buffer.drawIndexed(static_cast<uint32_t>(m_indices.size()),
                                1, 0, 0, 0);
@@ -401,9 +401,22 @@ void renderer::create_index_buffers() {
 
 void renderer::create_objects_uniform_buffer() {
   // for model matrices and object dependent information.
+  
+  // Uniform buffer alignment
+  size_t min_ubo_alignment = m_physical_device.getProperties()
+    .limits.minUniformBufferOffsetAlignment;
+
+  m_dynamic_alignment = sizeof(glm::mat4); // TODO: rm mat4
+
+  if (min_ubo_alignment > 0) {
+    m_dynamic_alignment = (m_dynamic_alignment + min_ubo_alignment - 1) &
+      ~(min_ubo_alignment - 1);
+  }
+
+  vk::DeviceSize buffer_size = m_num_objects * min_ubo_alignment;
 
   // TODO: change the glm::mat4 to something not hardcoded
-  vk::DeviceSize buffer_size = sizeof(glm::mat4) * m_num_objects;
+  //vk::DeviceSize buffer_size = sizeof(glm::mat4) * m_num_objects;
 
   m_object_uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
   m_object_uniform_buffers_memory.resize(MAX_FRAMES_IN_FLIGHT);
@@ -1561,27 +1574,31 @@ void renderer::cleanup() {
   SDL_DestroyWindow(m_window);
 }
 
-glm::mat4* renderer::map_object_uniform() {
+size_t renderer::get_uniform_alignment() const {
+  return m_dynamic_alignment;
+}
+
+uint8_t* renderer::map_object_uniform() {
   void *data = m_device.mapMemory(m_object_uniform_buffers_memory[m_current_frame],
                           0,
                           sizeof(glm::mat4) * m_num_objects);
 
-  return static_cast<glm::mat4*>(data);
+  return static_cast<uint8_t*>(data);
 }
 
-void renderer::unmap_object_uniform(glm::mat4* data) {
+void renderer::unmap_object_uniform() {
   m_device.unmapMemory(m_object_uniform_buffers_memory[m_current_frame]);
 }
 
-camera_uniform* renderer::map_camera_uniform() {
+uint8_t* renderer::map_camera_uniform() {
   void *data = m_device.mapMemory(m_camera_uniform_buffers_memory[m_current_frame],
                           0,
                           sizeof(camera_uniform));
 
-  return static_cast<camera_uniform*>(data);
+  return static_cast<uint8_t*>(data);
 }
 
-void renderer::unmap_camera_uniform(camera_uniform* data) {
+void renderer::unmap_camera_uniform() {
   m_device.unmapMemory(m_camera_uniform_buffers_memory[m_current_frame]);
 }
 

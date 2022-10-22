@@ -79,7 +79,7 @@ private:
   std::vector<vk::Buffer> m_object_uniform_buffers;
   std::vector<vk::DeviceMemory> m_object_uniform_buffers_memory;
 
-  size_t m_dynamic_alignment;
+  size_t m_uniform_offset_alignment;
 
   vk::DescriptorPool m_descriptor_pool;
 

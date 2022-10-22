@@ -49,6 +49,7 @@ void update_objects(const renderer& render, const physics& phys, uint8_t *data) 
   size_t alignment = render.get_uniform_alignment();
   for (int i = 0; i < NUM_OBJECTS; i++) {
     glm::mat4* curr = reinterpret_cast<glm::mat4*>(data + i * alignment);
+
     *curr = glm::mat4(1.0f);
     *curr = glm::translate(*curr, phys.get_position(i));
   }
@@ -59,8 +60,10 @@ void update_camera(orthographic_camera& cam,
                    const renderer &render) {
   
   camera_uniform *cam_uniform = reinterpret_cast<camera_uniform*>(uniform);
+
   cam_uniform->view = cam.get_view_matrix();
   cam_uniform->proj = cam.get_projection_matrix();
+
   //cam_uniform->proj[1][1] *= -1;
 }
 

@@ -125,7 +125,7 @@ void renderer::record_command_buffer(vk::CommandBuffer command_buffer,
                                       0,
                                       {m_descriptor_sets[m_current_frame]},
                                       {static_cast<unsigned int>
-                                        (m_dynamic_alignment * i)});
+                                        (get_uniform_alignment() * i)});
 
     command_buffer.drawIndexed(static_cast<uint32_t>(m_indices.size()),
                                1, 0, 0, 0);
@@ -406,10 +406,10 @@ void renderer::create_objects_uniform_buffer() {
   size_t min_ubo_alignment = m_physical_device.getProperties()
     .limits.minUniformBufferOffsetAlignment;
 
-  m_dynamic_alignment = sizeof(glm::mat4); // TODO: rm mat4
+  m_uniform_offset_alignment = sizeof(glm::mat4); // TODO: rm mat4
 
   if (min_ubo_alignment > 0) {
-    m_dynamic_alignment = (m_dynamic_alignment + min_ubo_alignment - 1) &
+    m_uniform_offset_alignment = (m_uniform_offset_alignment + min_ubo_alignment - 1) &
       ~(min_ubo_alignment - 1);
   }
 
@@ -1572,10 +1572,11 @@ void renderer::cleanup() {
   m_instance.destroy(m_surface);
   m_instance.destroy();
   SDL_DestroyWindow(m_window);
+  SDL_Quit();
 }
 
 size_t renderer::get_uniform_alignment() const {
-  return m_dynamic_alignment;
+  return m_uniform_offset_alignment;
 }
 
 uint8_t* renderer::map_object_uniform() {

@@ -6,7 +6,7 @@
 
 #include "vertex.hpp"
 
-const int MAX_FRAMES_IN_FLIGHT = 2;
+const int MAX_FRAMES_IN_FLIGHT = 3;
 
 struct camera_uniform {
   alignas(16) glm::mat4 view;

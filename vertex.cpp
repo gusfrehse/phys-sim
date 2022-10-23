@@ -3,8 +3,11 @@
 #include <vulkan/vulkan.hpp>
 #include <glm/vec3.hpp>
 
+#include "profiler.hpp"
+
 std::array<vk::VertexInputAttributeDescription, 3>
 vertex::get_attribute_descriptions() {
+  PROFILE_FUNC();
   std::array<vk::VertexInputAttributeDescription, 3> attrib_description{};
 
   attrib_description[0].binding = 0;
@@ -27,6 +30,7 @@ vertex::get_attribute_descriptions() {
 
 
 vk::VertexInputBindingDescription vertex::get_binding_description() {
+  PROFILE_FUNC();
   vk::VertexInputBindingDescription binding_description{};
   binding_description.binding = 0;
   binding_description.stride = sizeof(vertex);

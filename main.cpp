@@ -88,11 +88,11 @@ void show_frame_time(SDL_Window *w,
 }
 
 int main(int argc, char **argv) {
+  PROFILE_FUNC();
+
   renderer render;
   render.set_num_objects(NUM_OBJECTS);
   render.init();
-
-  PROFILE_FUNC();
 
   physics phys({
     object {

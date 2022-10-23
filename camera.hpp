@@ -55,4 +55,17 @@ public:
   orthographic_camera(float aspect_ratio);
 };
 
+class perspective_camera : public camera {
+private:
+  float m_fov;
+
+  void recalculate_view_matrix() override;
+  void recalculate_proj_matrix() override;
+
+public:
+  float get_fov() const { return m_fov; }
+  void set_fov(float fov);
+  perspective_camera();
+  perspective_camera(float aspect_ratio);
+};
 /* vim: set sts=2 ts=2 sw=2 et cc=81: */

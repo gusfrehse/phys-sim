@@ -15,10 +15,9 @@
 #include <glm/trigonometric.hpp>
 
 #include "renderer.hpp"
-
 #include "camera.hpp" 
-
 #include "physics.hpp"
+#include "profiler.hpp"
 
 const uint32_t NUM_OBJECTS = 3;
 
@@ -26,6 +25,7 @@ std::unordered_map<SDL_Keycode, bool> keys;
 
 auto handle_event(SDL_Event e, orthographic_camera& cam,
                   const renderer& render) {
+  PROFILE_FUNC();
   switch (e.type) {
     case SDL_KEYDOWN:
       keys[e.key.keysym.sym] = 1;
@@ -46,6 +46,7 @@ auto handle_event(SDL_Event e, orthographic_camera& cam,
 }
 
 void update_objects(const renderer& render, const physics& phys, uint8_t *data) {
+  PROFILE_FUNC();
   size_t alignment = render.get_uniform_alignment();
   for (int i = 0; i < NUM_OBJECTS; i++) {
     glm::mat4* curr = reinterpret_cast<glm::mat4*>(data + i * alignment);
@@ -58,7 +59,7 @@ void update_objects(const renderer& render, const physics& phys, uint8_t *data) 
 void update_camera(orthographic_camera& cam,
                    uint8_t *uniform,
                    const renderer &render) {
-  
+  PROFILE_FUNC();
   camera_uniform *cam_uniform = reinterpret_cast<camera_uniform*>(uniform);
 
   cam_uniform->view = cam.get_view_matrix();
@@ -70,6 +71,8 @@ void update_camera(orthographic_camera& cam,
 void show_frame_time(SDL_Window *w,
                      float dt_acc,
                      unsigned long long num_frames) {
+  PROFILE_FUNC();
+  
   std::stringstream ss;
   auto averaged_dt = dt_acc / (float) num_frames;
   ss <<
@@ -88,6 +91,8 @@ int main(int argc, char **argv) {
   renderer render;
   render.set_num_objects(NUM_OBJECTS);
   render.init();
+
+  PROFILE_FUNC();
 
   physics phys({
     object {

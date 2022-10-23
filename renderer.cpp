@@ -46,6 +46,7 @@
 #include "tiny_obj_loader.h"
 
 #include "shaders.h"
+#include "profiler.hpp"
 
 #define CHECK_SDL(x, pred)                                                     \
   do {                                                                         \
@@ -68,6 +69,7 @@ template<> struct std::hash<vertex> {
 };
 
 void renderer::set_num_objects(uint32_t num) {
+  PROFILE_FUNC();
   if (num > m_num_objects) {
     // create num - num_objects 
   } else {
@@ -79,6 +81,7 @@ void renderer::set_num_objects(uint32_t num) {
 
 void renderer::record_command_buffer(vk::CommandBuffer command_buffer,
                                      int image_index) {
+  PROFILE_FUNC();
   vk::CommandBufferBeginInfo begin_info{};
 
   command_buffer.begin(begin_info);
@@ -137,6 +140,7 @@ void renderer::record_command_buffer(vk::CommandBuffer command_buffer,
 }
 
 void renderer::create_sync_objects() {
+  PROFILE_FUNC();
   vk::SemaphoreCreateInfo semaphore_info{};
 
   vk::FenceCreateInfo fence_info{vk::FenceCreateFlagBits::eSignaled};
@@ -153,6 +157,7 @@ void renderer::create_sync_objects() {
 
 uint32_t renderer::find_memory_type(uint32_t type_filter,
                                     vk::MemoryPropertyFlags properties) {
+  PROFILE_FUNC();
   vk::PhysicalDeviceMemoryProperties mem_properties =
     m_physical_device.getMemoryProperties();
 
@@ -173,6 +178,7 @@ std::pair<vk::Buffer, vk::DeviceMemory>
 renderer::create_buffer(vk::DeviceSize size,
                         vk::BufferUsageFlags usage,
                         vk::MemoryPropertyFlags properties) {
+  PROFILE_FUNC();
 
   vk::Buffer buffer;
   vk::DeviceMemory buffer_memory;
@@ -201,6 +207,7 @@ renderer::create_buffer(vk::DeviceSize size,
 }
 
 vk::CommandBuffer renderer::begin_single_time_commands() {
+  PROFILE_FUNC();
   vk::CommandBufferAllocateInfo alloc_info{};
   alloc_info.level = vk::CommandBufferLevel::ePrimary;
   alloc_info.commandPool = m_alloc_command_pool;
@@ -219,6 +226,7 @@ vk::CommandBuffer renderer::begin_single_time_commands() {
 }
 
 void renderer::end_single_time_commands(vk::CommandBuffer command_buffer) {
+  PROFILE_FUNC();
   command_buffer.end();
 
   // submit command buffer
@@ -237,6 +245,7 @@ void renderer::end_single_time_commands(vk::CommandBuffer command_buffer) {
 void renderer::copy_buffer(vk::Buffer src,
                            vk::Buffer dst,
                            vk::DeviceSize size) {
+  PROFILE_FUNC();
   vk::CommandBuffer command_buffer = begin_single_time_commands();
 
   vk::BufferCopy copy_region{};
@@ -254,6 +263,7 @@ void renderer::transition_image_layout(vk::Image image,
                                        vk::ImageLayout old_layout,
                                        vk::ImageLayout new_layout,
                                        uint32_t mip_levels) {
+  PROFILE_FUNC();
 
   auto command_buffer = begin_single_time_commands();
 
@@ -310,6 +320,7 @@ void renderer::copy_buffer_to_image(vk::Buffer buffer,
                                     vk::Image image,
                                     uint32_t width,
                                     uint32_t height) {
+  PROFILE_FUNC();
   vk::CommandBuffer command_buffer = begin_single_time_commands();
 
   vk::BufferImageCopy region{};
@@ -334,6 +345,7 @@ void renderer::copy_buffer_to_image(vk::Buffer buffer,
 }
 
 void renderer::create_vertex_buffers() {
+  PROFILE_FUNC();
   vk::DeviceSize buffer_size = sizeof(m_vertices[0]) * m_vertices.size();
 
   // create staging buffer and memory
@@ -367,6 +379,7 @@ void renderer::create_vertex_buffers() {
 }
 
 void renderer::create_index_buffers() {
+  PROFILE_FUNC();
   vk::DeviceSize buffer_size = sizeof(m_indices[0]) * m_indices.size();
 
   // create staging buffer and memory
@@ -401,6 +414,7 @@ void renderer::create_index_buffers() {
 
 void renderer::create_objects_uniform_buffer() {
   // for model matrices and object dependent information.
+  PROFILE_FUNC();
   
   // Uniform buffer alignment
   size_t min_ubo_alignment = m_physical_device.getProperties()
@@ -431,6 +445,7 @@ void renderer::create_objects_uniform_buffer() {
 }
 
 void renderer::create_uniform_buffers() {
+  PROFILE_FUNC();
   vk::DeviceSize buffer_size = sizeof(camera_uniform);
 
   m_camera_uniform_buffers.resize(MAX_FRAMES_IN_FLIGHT);
@@ -447,6 +462,7 @@ void renderer::create_uniform_buffers() {
 }
 
 void renderer::create_descriptor_set_layout() {
+  PROFILE_FUNC();
   vk::DescriptorSetLayoutBinding ubo_layout_binding{};
   ubo_layout_binding.binding = 0;
   ubo_layout_binding.descriptorType = vk::DescriptorType::eUniformBuffer;
@@ -483,6 +499,7 @@ void renderer::create_descriptor_set_layout() {
 }
 
 void renderer::create_descriptor_pool() {
+  PROFILE_FUNC();
   std::array<vk::DescriptorPoolSize, 3> pool_sizes{};
 
   // camera proj view
@@ -506,6 +523,7 @@ void renderer::create_descriptor_pool() {
 }
 
 void renderer::create_descriptor_sets() {
+  PROFILE_FUNC();
   std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT,
                                                m_descriptor_set_layout);
 
@@ -561,6 +579,7 @@ void renderer::create_descriptor_sets() {
 }
 
 void renderer::create_command_buffers() {
+  PROFILE_FUNC();
   vk::CommandBufferAllocateInfo alloc_info{};
   alloc_info.commandPool = m_command_pool;
   alloc_info.level = vk::CommandBufferLevel::ePrimary;
@@ -570,6 +589,7 @@ void renderer::create_command_buffers() {
 }
 
 void renderer::create_command_pools() {
+  PROFILE_FUNC();
   vk::CommandPoolCreateInfo pool_info{};
   pool_info.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer;
   pool_info.queueFamilyIndex = m_queue_family_index.value();
@@ -584,6 +604,7 @@ void renderer::create_command_pools() {
 }
 
 void renderer::create_renderpass() {
+  PROFILE_FUNC();
   vk::AttachmentDescription color_attachment_desc{};
   color_attachment_desc.format = m_swapchain_image_format;
   color_attachment_desc.samples = m_msaa_samples;
@@ -670,6 +691,7 @@ void renderer::create_renderpass() {
 }
 
 void renderer::create_graphics_pipeline() {
+  PROFILE_FUNC();
   // create fragment shader module
   vk::ShaderModuleCreateInfo frag_module_info{};
   frag_module_info.codeSize = basic_frag_spv_len;
@@ -798,6 +820,7 @@ void renderer::create_graphics_pipeline() {
 }
 
 void renderer::create_swapchain() {
+  PROFILE_FUNC();
   //fprintf(stderr, "Creating swapchain\n");
   auto surface_capabilities =
     m_physical_device.getSurfaceCapabilitiesKHR(m_surface);
@@ -890,6 +913,7 @@ void renderer::create_swapchain() {
 }
 
 void renderer::create_framebuffers() {
+  PROFILE_FUNC();
   m_swapchain_framebuffers.clear();
 
   for (int i = 0; i < m_swapchain_image_views.size(); i++) {
@@ -913,6 +937,7 @@ void renderer::create_framebuffers() {
 }
 
 void renderer::cleanup_swapchain() {
+  PROFILE_FUNC();
   m_device.destroy(m_color_image_view);
   m_device.destroy(m_color_image);
   m_device.free(m_color_image_memory);
@@ -933,6 +958,7 @@ void renderer::cleanup_swapchain() {
 }
 
 void renderer::create_depth_resources() {
+  PROFILE_FUNC();
   vk::Format depth_format = find_depth_format();
 
   std::tie(m_depth_image, m_depth_image_memory) =
@@ -955,6 +981,7 @@ void renderer::create_depth_resources() {
 }
 
 void renderer::create_color_resources() {
+  PROFILE_FUNC();
   vk::Format color_format = m_swapchain_image_format;
 
   std::tie(m_color_image, m_color_image_memory) =
@@ -975,6 +1002,7 @@ void renderer::create_color_resources() {
 }
 
 void renderer::recreate_swapchain() {
+  PROFILE_FUNC();
   m_device.waitIdle();
 
   cleanup_swapchain();
@@ -988,6 +1016,7 @@ void renderer::recreate_swapchain() {
 }
 
 void renderer::create_instance() {
+  PROFILE_FUNC();
   vk::ApplicationInfo application_info("phys sim");
 
   // validation layer work
@@ -1018,6 +1047,7 @@ void renderer::create_instance() {
 }
 
 vk::SampleCountFlagBits renderer::get_max_usable_sample_count() {
+  PROFILE_FUNC();
   auto physical_device_properties = m_physical_device.getProperties();
 
   auto count =
@@ -1046,6 +1076,7 @@ vk::SampleCountFlagBits renderer::get_max_usable_sample_count() {
 }
 
 void renderer::create_physical_device() {
+  PROFILE_FUNC();
 
   m_physical_device = nullptr;
   int max_mem = 0;
@@ -1080,6 +1111,7 @@ void renderer::create_physical_device() {
 }
 
 void renderer::create_device_and_queues() {
+  PROFILE_FUNC();
   CHECK_SDL(SDL_Vulkan_CreateSurface(
               m_window, m_instance, reinterpret_cast<VkSurfaceKHR *>(&m_surface)),
             != SDL_TRUE);
@@ -1129,6 +1161,7 @@ renderer::create_image(uint32_t width,
                        vk::ImageTiling tiling,
                        vk::ImageUsageFlags usage,
                        vk::MemoryPropertyFlags properties) {
+  PROFILE_FUNC();
   vk::Image image;
   vk::DeviceMemory image_memory;
 
@@ -1167,6 +1200,7 @@ renderer::create_image(uint32_t width,
 void renderer::generate_mipmaps(vk::Image image, vk::Format image_format,
                                 int32_t tex_width, int32_t tex_height,
                                 uint32_t mip_levels ) {
+  PROFILE_FUNC();
 
   // check properties for linear bliting support 
   auto format_properties = m_physical_device.getFormatProperties(image_format);
@@ -1262,6 +1296,7 @@ void renderer::generate_mipmaps(vk::Image image, vk::Format image_format,
 }
 
 void renderer::create_texture_image() {
+  PROFILE_FUNC();
   int tex_width, tex_height, tex_channels;
 
   stbi_uc* pixels = stbi_load(TEXTURE_PATH.c_str(), &tex_width, &tex_height,
@@ -1329,6 +1364,7 @@ vk::ImageView renderer::create_image_view(vk::Image image,
                                           vk::Format format,
                                           vk::ImageAspectFlags aspect_flags,
                                           uint32_t mip_levels) {
+  PROFILE_FUNC();
   vk::ImageViewCreateInfo view_info{};
   view_info.image = image;
   view_info.viewType = vk::ImageViewType::e2D;
@@ -1344,6 +1380,7 @@ vk::ImageView renderer::create_image_view(vk::Image image,
 }
 
 void renderer::create_texture_image_view() {
+  PROFILE_FUNC();
   m_texture_image_view = create_image_view(m_texture_image,
                                          vk::Format::eR8G8B8A8Srgb,
                                          vk::ImageAspectFlagBits::eColor,
@@ -1351,6 +1388,7 @@ void renderer::create_texture_image_view() {
 }
 
 void renderer::create_texture_sampler() {
+  PROFILE_FUNC();
   vk::SamplerCreateInfo sampler_info{};
   sampler_info.magFilter = vk::Filter::eLinear;
   sampler_info.minFilter = vk::Filter::eLinear;
@@ -1377,6 +1415,7 @@ void renderer::create_texture_sampler() {
 vk::Format renderer::find_supported_format(const std::vector<vk::Format>& candidates,
                                            vk::ImageTiling tiling,
                                            vk::FormatFeatureFlags features) {
+  PROFILE_FUNC();
 
   for (auto format : candidates) {
     auto props = m_physical_device.getFormatProperties(format);
@@ -1397,6 +1436,7 @@ vk::Format renderer::find_supported_format(const std::vector<vk::Format>& candid
 }
 
 vk::Format renderer::find_depth_format() {
+  PROFILE_FUNC();
   return find_supported_format(
     { vk::Format::eD32Sfloat,
       vk::Format::eD32SfloatS8Uint,
@@ -1406,11 +1446,13 @@ vk::Format renderer::find_depth_format() {
 }
 
 bool renderer::has_stencil_component(vk::Format format) {
+  PROFILE_FUNC();
   return format == vk::Format::eD32SfloatS8Uint ||
   format == vk::Format::eD24UnormS8Uint;
 }
 
 void renderer::load_model() {
+  PROFILE_FUNC();
   tinyobj::attrib_t attrib;
   std::vector<tinyobj::shape_t> shapes;
   std::vector<tinyobj::material_t> materials;
@@ -1462,6 +1504,7 @@ void renderer::load_model() {
 }
 
 void renderer::init_vulkan() {
+  PROFILE_FUNC();
   CHECK_SDL(SDL_Init(SDL_INIT_VIDEO), != 0);
 
   // create window
@@ -1526,6 +1569,7 @@ void renderer::init_vulkan() {
 }
 
 void renderer::cleanup() {
+  PROFILE_FUNC();
   m_device.waitIdle();
 
   cleanup_swapchain();
@@ -1576,10 +1620,12 @@ void renderer::cleanup() {
 }
 
 size_t renderer::get_uniform_alignment() const {
+  PROFILE_FUNC();
   return m_uniform_offset_alignment;
 }
 
 uint8_t* renderer::map_object_uniform() {
+  PROFILE_FUNC();
   void *data = m_device.mapMemory(m_object_uniform_buffers_memory[m_current_frame],
                           0,
                           sizeof(glm::mat4) * m_num_objects);
@@ -1588,10 +1634,12 @@ uint8_t* renderer::map_object_uniform() {
 }
 
 void renderer::unmap_object_uniform() {
+  PROFILE_FUNC();
   m_device.unmapMemory(m_object_uniform_buffers_memory[m_current_frame]);
 }
 
 uint8_t* renderer::map_camera_uniform() {
+  PROFILE_FUNC();
   void *data = m_device.mapMemory(m_camera_uniform_buffers_memory[m_current_frame],
                           0,
                           sizeof(camera_uniform));
@@ -1600,12 +1648,17 @@ uint8_t* renderer::map_camera_uniform() {
 }
 
 void renderer::unmap_camera_uniform() {
+  PROFILE_FUNC();
   m_device.unmapMemory(m_camera_uniform_buffers_memory[m_current_frame]);
 }
 
-void renderer::init() { init_vulkan(); }
+void renderer::init() {
+  PROFILE_FUNC();
+  init_vulkan();
+}
 
 void renderer::draw_frame() {
+  PROFILE_FUNC();
   // wait for in flight fences (whatever that means...)
   if (m_device.waitForFences({m_in_flight_fences[m_current_frame]}, true,
                            UINT64_MAX) != vk::Result::eSuccess) {
@@ -1688,14 +1741,17 @@ void renderer::draw_frame() {
 }
 
 uint32_t renderer::get_width() const {
+  PROFILE_FUNC();
   return m_swapchain_image_extent.width;
 }
 
 uint32_t renderer::get_height() const {
+  PROFILE_FUNC();
   return m_swapchain_image_extent.height;
 }
 
 SDL_Window* renderer::get_window() const {
+  PROFILE_FUNC();
   return m_window;
 }
 

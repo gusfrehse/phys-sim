@@ -7,7 +7,16 @@
 #include <cstdio>
 #include <vector>
 
+
+#ifdef PROFILE
+
 #define PROFILE_FUNC() scope_timer timer##__LINE__(__FUNCTION__)
+
+#else
+
+#define PROFILE_FUNC() 
+
+#endif
 
 struct profile_info {
   const char* name;

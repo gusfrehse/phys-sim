@@ -1,5 +1,5 @@
 workspace "phys-sim"
-configurations { "Release", "Debug" }
+configurations { "Release", "Debug", "Profile" }
 
 project "project"
 architecture "x86_64"
@@ -17,6 +17,11 @@ filter "configurations:Debug"
 
 filter "configurations:Release"
     symbols "Off"
+    optimize "Speed"
+
+filter "configurations:Profile"
+    defines { "PROFILE" }
+    symbols "On"
     optimize "Speed"
 
 -- have to change this for windows...

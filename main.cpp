@@ -96,22 +96,16 @@ int main(int argc, char **argv) {
 
   physics phys({
     object {
-      .position = glm::vec3(0.0f, 1.0f, -1.0f),
-      .velocity = glm::vec3(0.0f, 0.0f, 0.0f),
-      .force = glm::vec3(0.0f),
-      .mass = 1.0f,
+      glm::vec3(0.0f, 1.0f, -1.0f),
+      glm::vec3(0.0f, 0.0f, 0.0f),
     },
     object {
-      .position = glm::vec3(-10.0f, 1.0f, -1.0f),
-      .velocity = glm::vec3(1e-3f, 0.0f, 0.0f),
-      .force = glm::vec3(0.0f),
-      .mass = 1.0f,
+      glm::vec3(-10.0f, 1.0f, -1.0f),
+      glm::vec3(1e-3f, 0.0f, 0.0f),
     },
     object {
-      .position = glm::vec3(10.0f, 1.0f, -1.0f),
-      .velocity = glm::vec3(-1e-3f, 0.0f, 0.0f),
-      .force = glm::vec3(0.0f),
-      .mass = 1.0f,
+       glm::vec3(20.0f, 1.0f, -1.0f),
+       glm::vec3(-1e-3f, 0.0f, 0.0f),
     },
   });
 
@@ -153,6 +147,8 @@ int main(int argc, char **argv) {
 
     // update physics
     phys.time_step(dt);
+
+    phys.check_collisions();
 
     // update camera
     glm::vec3 pos = cam.get_position();

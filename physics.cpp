@@ -30,7 +30,7 @@ static collision_response collides(const object& a, const object& b) {
     auto dif = glm::length2(a.position - b.position);
     auto radius_sum = a.radius + b.radius;
 
-    auto val = dif - radius_sum * radius_sum; 
+    auto val = radius_sum * radius_sum - dif; 
 
     //std::printf("Testing A { position: %g, velocity: %g, radius: %g }\n",
     //            a.position.x, a.velocity.x, a.radius);
@@ -62,8 +62,9 @@ void physics::check_collisions() {
     for (auto object_b = object_a + 1; object_b != m_objects.end(); object_b++) {
       auto collision = collides(*object_a, *object_b);
 
-      if (collision.val <= -0.01f) {
-        std::printf("Collision! a: %d b: %d\n", collision.a_id, collision.b_id);
+      if (collision.val >= 0.01f) {
+        std::printf("Collision! a: %d b: %d val: %g\n",
+                    collision.a_id, collision.b_id, collision.val);
       }
     }
   }

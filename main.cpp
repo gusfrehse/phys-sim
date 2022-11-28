@@ -47,6 +47,31 @@ auto handle_event(SDL_Event e, orthographic_camera& cam,
   }
 }
 
+void apply_collisions(physics& phys,
+                      const std::vector<collision_response>& collisions,
+                      int num_collisions) {
+
+  for (int i = 0; i < num_collisions; i++) {
+    auto col = collisions[i];
+
+    auto& a = phys.get_object(col.a_id);
+    auto& b = phys.get_object(col.b_id);
+
+    auto rel_velocity = a.velocity - b.velocity;
+
+    auto normal = glm::normalize(a.position - b.position);
+
+    auto impulse = glm::dot(rel_velocity, normal) * normal;
+
+    auto cu = impulse;
+
+    std::printf("cu: %g %g %g\n", cu.x, cu.y, cu.z);
+
+    a.velocity += -impulse;
+    b.velocity +=  impulse;
+  }
+}
+
 void update_objects(const renderer& render, const physics& phys, uint8_t *data) {
   PROFILE_FUNC();
   size_t alignment = render.get_uniform_alignment();
@@ -55,6 +80,7 @@ void update_objects(const renderer& render, const physics& phys, uint8_t *data) 
 
     *curr = glm::mat4(1.0f);
     *curr = glm::translate(*curr, phys.get_position(i));
+    *curr = glm::scale(*curr, glm::vec3(10.0f));
   }
 }
 
@@ -97,24 +123,30 @@ int main(int argc, char **argv) {
   render.init();
 
   physics phys({
-    object {
-      glm::vec3(0.0f, 1.0f, -1.0f),
-      glm::vec3(0.0f, 0.0f, 0.0f),
-    },
-    object {
-      glm::vec3(-10.0f, 1.0f, -1.0f),
-      glm::vec3(1e-3f, 0.0f, 0.0f),
-    },
-    object {
-       glm::vec3(20.0f, 1.0f, -1.0f),
-       glm::vec3(-1e-3f, 0.0f, 0.0f),
-    },
-  });
+                 object {
+                   glm::vec3(0.0f, 1.0f, -1.0f),
+                   glm::vec3(0.0f, 0.0f, 0.0f),
+                   1.0f,
+                   10.0f
+                 },
+                 object {
+                   glm::vec3(-1000.0f, 1.0f, -1.0f),
+                   glm::vec3(1e-1f, 0.0f, 0.0f),
+                   1.0f,
+                   10.0f
+                 },
+                 object {
+                   glm::vec3(2000.0f, 1.0f, -1.0f),
+                   glm::vec3(-1e-1f, 0.0f, 0.0f),
+                   1.0f,
+                   10.0f
+                 },
+               });
 
   float aspect_ratio = render.get_width() / (float) render.get_height();
 
   orthographic_camera cam(aspect_ratio);
-  cam.set_zoom(4.00);
+  cam.set_zoom(10.00f);
 
   auto prev_t = std::chrono::steady_clock::now();
   auto curr_t = std::chrono::steady_clock::now();
@@ -156,7 +188,13 @@ int main(int argc, char **argv) {
     while (integration_time_left >= physics_refresh_rate) {
       phys.time_step(physics_refresh_rate);
 
-      phys.check_collisions();
+      int num_collisions = phys.check_collisions();
+      auto collisions = phys.get_collisions();
+
+      apply_collisions(phys, collisions, num_collisions);
+      for (int i = 0; i < num_collisions; i++) {
+        
+      }
 
       integration_time_left -= physics_refresh_rate;
     }

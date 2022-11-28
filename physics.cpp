@@ -7,6 +7,10 @@
 #include "profiler.hpp"
 #include "object.hpp"
 
+physics::physics(std::initializer_list<object> const &list) : m_objects(list) {
+  m_collisions.resize(list.size() * list.size());
+};
+
 void physics::time_step(float dt) {
   PROFILE_FUNC();
   for (auto& obj : m_objects) {
@@ -17,12 +21,6 @@ void physics::time_step(float dt) {
     obj.force = glm::vec3(0.0f);
   }
 }
-
-struct collision_response {
-  float val;
-  int a_id;
-  int b_id;
-};
 
 static collision_response collides(const object& a, const object& b) {
   // collision for now are only between spheres. Maybe for ever.
@@ -56,22 +54,34 @@ static collision_response collides(const object& a, const object& b) {
   };
 }
 
-void physics::check_collisions() {
+int physics::check_collisions() {
   PROFILE_FUNC();
+  int index = 0;
   for (auto object_a = m_objects.begin(); object_a != m_objects.end(); object_a++) {
     for (auto object_b = object_a + 1; object_b != m_objects.end(); object_b++) {
       auto collision = collides(*object_a, *object_b);
 
       if (collision.val >= 0.01f) {
-        std::printf("Collision! a: %d b: %d val: %g\n",
-                    collision.a_id, collision.b_id, collision.val);
+        std::printf("collision!\n");
+        m_collisions[index++] = collision;
       }
     }
   }
+
+  return index;
+}
+
+std::vector<collision_response>& physics::get_collisions() {
+  return m_collisions;
 }
 
 glm::vec3 physics::get_position(uint32_t i) const {
   PROFILE_FUNC();
   return m_objects[i].position;
 }
+
+object& physics::get_object(uint32_t i) {
+  return m_objects[i];
+}
+
 /* vim: set sts=2 ts=2 sw=2 et cc=81: */

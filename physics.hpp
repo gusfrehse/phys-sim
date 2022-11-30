@@ -13,7 +13,8 @@ struct collision_response {
 };
 
 class physics {
-  const glm::vec3 m_gravity = glm::vec3(0.0f, -98e-8f, 0.0f);
+  //const glm::vec3 m_gravity = glm::vec3(0.0f, -98e-8f, 0.0f);
+  const glm::vec3 m_gravity = glm::vec3(0.0f);
   std::vector<object> m_objects;
   std::vector<collision_response> m_collisions;
 

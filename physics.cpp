@@ -13,13 +13,22 @@ physics::physics(std::initializer_list<object> const &list) : m_objects(list) {
 
 void physics::time_step(float dt) {
   PROFILE_FUNC();
+
+  float total_kinetic_energy = 0.0f;
+
   for (auto& obj : m_objects) {
     obj.force    += m_gravity * obj.mass;
     obj.velocity += obj.force / obj.mass * dt;
     obj.position += obj.velocity * dt;
 
     obj.force = glm::vec3(0.0f);
+
+    total_kinetic_energy += (obj.mass * glm::length2(obj.velocity));
   }
+
+  total_kinetic_energy /= 2.0f;
+
+  std::printf("total energy is %g joules \n", total_kinetic_energy);
 }
 
 static collision_response collides(const object& a, const object& b) {

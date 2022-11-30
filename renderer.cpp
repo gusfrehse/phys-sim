@@ -1021,8 +1021,8 @@ void renderer::create_instance() {
 
   // validation layer work
   std::vector<const char *> validation_layers = {
-    "VK_LAYER_KHRONOS_validation",
-    "VK_LAYER_KHRONOS_validation"
+    //"VK_LAYER_KHRONOS_validation",
+    //"VK_LAYER_KHRONOS_validation"
   };
 
   // SDL extensions
@@ -1079,7 +1079,7 @@ void renderer::create_physical_device() {
   PROFILE_FUNC();
 
   m_physical_device = nullptr;
-  int max_mem = 0;
+  float max_mem = 0;
 
   printf("Analyzing physical devices\n");
   // find device with most memory

@@ -28,7 +28,7 @@ void physics::time_step(float dt) {
 
   total_kinetic_energy /= 2.0f;
 
-  std::printf("total energy is %g joules \n", total_kinetic_energy);
+  //std::printf("total energy is %g joules \n", total_kinetic_energy);
 }
 
 static collision_response collides(const object& a, const object& b) {

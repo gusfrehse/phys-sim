@@ -1,10 +1,8 @@
 #include "camera.hpp"
 
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/ext/matrix_transform.hpp>
+#include "glm.hpp"
 
 #include "profiler.hpp"
-
 
 camera::camera() :
   m_position(0.0f),
@@ -37,9 +35,10 @@ orthographic_camera::orthographic_camera(float aspect_ratio) : m_zoom(1.0f) {
 
 void orthographic_camera::recalculate_proj_matrix() {
   PROFILE_FUNC();
-  m_projection_matrix = glm::ortho(-m_aspect_ratio,
+  m_projection_matrix = glm::ortho<float>(-m_aspect_ratio,
                                    m_aspect_ratio,
-                                   1.0f, -1.0f);
+                                   1.0f, -1.0f,
+                                    -100.00f, 100.0f);
   m_projection_view_matrix = m_projection_matrix * m_view_matrix;
 }
 
@@ -69,16 +68,19 @@ perspective_camera::perspective_camera(float aspect_ratio) : m_fov(1.0f) {
 
 void perspective_camera::recalculate_proj_matrix() {
   PROFILE_FUNC();
-  m_projection_matrix = glm::ortho(-m_aspect_ratio,
-                                   m_aspect_ratio,
-                                   1.0f, -1.0f);
+  m_projection_matrix = glm::perspective(glm::radians(m_fov),
+                                         m_aspect_ratio,
+                                         0.01f,
+                                         100.0f);
+
   m_projection_view_matrix = m_projection_matrix * m_view_matrix;
 }
 
 void perspective_camera::recalculate_view_matrix() {
   PROFILE_FUNC();
-  glm::mat4 transform = glm::translate(glm::mat4(1.0f), m_position);
-  transform = glm::scale(transform, glm::vec3(m_fov, m_fov, 1.0f));
+  glm::mat4 transform = glm::translate(glm::mat4(1.0f), m_position)
+    * glm::rotate(glm::radians(m_yaw), glm::vec3(0.0f, 1.0f, 0.0f))
+    * glm::rotate(glm::radians(m_pitch), glm::vec3(0.0f, 0.0f, 1.0f));
 
   m_view_matrix = glm::inverse(transform);
   m_projection_view_matrix = m_projection_matrix * m_view_matrix;
@@ -87,7 +89,7 @@ void perspective_camera::recalculate_view_matrix() {
 void perspective_camera::set_fov(float fov) {
   PROFILE_FUNC();
   m_fov = fov;
-  recalculate_view_matrix();
+  recalculate_proj_matrix();
 }
 
 /* vim: set sts=2 ts=2 sw=2 et cc=81: */

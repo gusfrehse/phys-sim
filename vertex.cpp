@@ -1,7 +1,8 @@
 #include "vertex.hpp"
 
 #include <vulkan/vulkan.hpp>
-#include <glm/vec3.hpp>
+
+#include "glm.hpp"
 
 #include "profiler.hpp"
 

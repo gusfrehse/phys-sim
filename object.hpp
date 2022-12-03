@@ -1,5 +1,6 @@
 #pragma once
-#include <glm/vec3.hpp>
+
+#include "glm.hpp"
 
 enum class obj_type { SPHERE };
 

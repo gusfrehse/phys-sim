@@ -1,7 +1,9 @@
 #include <optional>
 
 #include <SDL2/SDL.h>
-#include <glm/matrix.hpp>
+
+#include "glm.hpp"
+
 #include <vulkan/vulkan.hpp>
 
 #include "vertex.hpp"
@@ -17,7 +19,7 @@ struct object_uniform {
   alignas(16) glm::mat4 model;
 };
 
-const std::string MODEL_PATH = "models/viking_room.obj";
+const std::string MODEL_PATH = "models/sphere.obj";
 const std::string TEXTURE_PATH = "textures/viking_room.png";
 
 struct renderer {

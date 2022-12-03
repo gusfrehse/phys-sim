@@ -1,7 +1,9 @@
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <glm/geometric.hpp>
 #include <iomanip>
+#include <random>
 
 #include <SDL2/SDL_keycode.h>
 #include <SDL2/SDL_video.h>
@@ -10,16 +12,14 @@
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_events.h>
 
-#include <glm/ext/matrix_transform.hpp>
-#include <glm/ext/matrix_clip_space.hpp>
-#include <glm/trigonometric.hpp>
+#include "glm.hpp"
 
 #include "renderer.hpp"
 #include "camera.hpp" 
 #include "physics.hpp"
 #include "profiler.hpp"
 
-const uint32_t NUM_OBJECTS = 3;
+const uint32_t NUM_OBJECTS = 10000;
 
 const float physics_refresh_rate = 1.0f / 60.0f;
 
@@ -50,6 +50,7 @@ auto handle_event(SDL_Event e, orthographic_camera& cam,
 void apply_collisions(physics& phys,
                       const std::vector<collision_response>& collisions,
                       int num_collisions) {
+  PROFILE_FUNC();
 
   for (int i = 0; i < num_collisions; i++) {
     auto col = collisions[i];
@@ -62,10 +63,6 @@ void apply_collisions(physics& phys,
     auto normal = glm::normalize(a.position - b.position);
 
     auto impulse = glm::dot(rel_velocity, normal) * normal;
-
-    auto cu = impulse;
-
-    std::printf("cu: %g %g %g\n", cu.x, cu.y, cu.z);
 
     a.velocity += -impulse;
     b.velocity +=  impulse;
@@ -122,31 +119,42 @@ int main(int argc, char **argv) {
   render.set_num_objects(NUM_OBJECTS);
   render.init();
 
-  physics phys({
-                 object {
-                   glm::vec3(0.0f, 1.0f, -1.0f),
-                   glm::vec3(0.0f, 0.0f, 0.0f),
-                   1.0f,
-                   10.0f
-                 },
-                 object {
-                   glm::vec3(-1000.0f, 1.0f, -1.0f),
-                   glm::vec3(1e-1f, 0.0f, 0.0f),
-                   1.0f,
-                   10.0f
-                 },
-                 object {
-                   glm::vec3(2000.0f, 1.0f, -1.0f),
-                   glm::vec3(-1e-1f, 0.0f, 0.0f),
-                   1.0f,
-                   10.0f
-                 },
-               });
+  physics phys;
+
+
+  {
+    std::random_device rd;
+
+    std::mt19937 e2(rd());
+
+    std::uniform_real_distribution<> dist(50.0f, 100.0f);
+
+    float phi = (1.0 + sqrt(5.0)) / 2.0;
+
+    float r = 6.0 * dist(e2) / 1.0f;
+
+    for (int i = 0; i < NUM_OBJECTS; i++) {
+      auto pos = glm::vec3((r + i * 0.4) * cos(phi * i * 0.4), (r + i * 0.4) * sin(phi * i * 0.4), -1.0f);
+      auto vel = -pos / dist(e2);
+      vel.z = 0.0f;
+
+      std::printf("Adding object at %g, %g, %g with velocity %g, %g, %g\n",
+                  pos.x, pos.y, pos.z,
+                  vel.x, vel.y, vel.z);
+
+      phys.add_object(object {
+                        pos,
+                        vel,
+                        1.0f,
+                        10.0f
+                      });
+    }
+  }
 
   float aspect_ratio = render.get_width() / (float) render.get_height();
 
   orthographic_camera cam(aspect_ratio);
-  cam.set_zoom(10.00f);
+  cam.set_zoom(400.00f);
 
   auto prev_t = std::chrono::steady_clock::now();
   auto curr_t = std::chrono::steady_clock::now();
@@ -184,17 +192,20 @@ int main(int argc, char **argv) {
 
     integration_time_left += dt;
 
+    // prevent spiral of death if physics take too much time
+    integration_time_left = std::min(integration_time_left, 1.0f / 10.0f);
+
     // update physics
     while (integration_time_left >= physics_refresh_rate) {
+      //std::printf("stepping again: %g\n", integration_time_left);
+
       phys.time_step(physics_refresh_rate);
+      //phys.time_step(dt);
 
       int num_collisions = phys.check_collisions();
       auto collisions = phys.get_collisions();
 
       apply_collisions(phys, collisions, num_collisions);
-      for (int i = 0; i < num_collisions; i++) {
-        
-      }
 
       integration_time_left -= physics_refresh_rate;
     }
@@ -224,6 +235,14 @@ int main(int argc, char **argv) {
       velocity += glm::vec3(1.0f,  0.0f,  0.0f);
     }
 
+    if (keys[SDLK_j]) {
+      velocity += glm::vec3(0.0f,  0.0f,  0.1f);
+    }
+
+    if (keys[SDLK_k]) {
+      velocity += glm::vec3(0.0f,  0.0f, -0.1f);
+    }
+
     if (keys[SDLK_LSHIFT]) {
       zoom *= zoom_speed;
     }
@@ -239,11 +258,14 @@ int main(int argc, char **argv) {
                        dt * speed * cam.get_zoom() * glm::normalize(velocity));
     }
 
+    glm::vec3 last_pos = phys.get_position(NUM_OBJECTS - 1);
+    //cam.set_position(last_pos + glm::vec3(0.0f, 0.0f, 1.0f));
 
     // update uniforms
     auto object_uniform = render.map_object_uniform();
     update_objects(render, phys, object_uniform);
     render.unmap_object_uniform();
+
 
     auto camera_uniform = render.map_camera_uniform();
     update_camera(cam, camera_uniform, render);

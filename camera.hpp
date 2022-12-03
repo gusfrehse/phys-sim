@@ -1,7 +1,8 @@
 #pragma once
 
 #include <memory>
-#include <glm/matrix.hpp>
+
+#include "glm.hpp"
 
 class camera {
 protected:
@@ -57,7 +58,9 @@ public:
 
 class perspective_camera : public camera {
 private:
-  float m_fov;
+  float m_fov = 90.0f;
+  float m_yaw = 0.0f;
+  float m_pitch = 0.0f;
 
   void recalculate_view_matrix() override;
   void recalculate_proj_matrix() override;

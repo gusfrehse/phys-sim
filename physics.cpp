@@ -2,7 +2,7 @@
 
 #include <cstdio>
 
-#include <glm/gtx/norm.hpp>
+#include "glm.hpp"
 
 #include "profiler.hpp"
 #include "object.hpp"
@@ -10,6 +10,14 @@
 physics::physics(std::initializer_list<object> const &list) : m_objects(list) {
   m_collisions.resize(list.size() * list.size());
 };
+
+void physics::add_object(object o) {
+  m_objects.push_back(o);
+  
+  auto size = m_objects.size();
+
+  m_collisions.resize(size * size);
+}
 
 void physics::time_step(float dt) {
   PROFILE_FUNC();
@@ -71,7 +79,7 @@ int physics::check_collisions() {
       auto collision = collides(*object_a, *object_b);
 
       if (collision.val >= 0.01f) {
-        std::printf("collision!\n");
+        // std::printf("collision!\n");
         m_collisions[index++] = collision;
       }
     }

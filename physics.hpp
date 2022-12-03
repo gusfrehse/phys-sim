@@ -1,8 +1,8 @@
 #pragma once
 
-#include <glm/vec3.hpp>
-#include <initializer_list>
 #include <vector>
+
+#include "glm.hpp"
 
 #include "object.hpp"
 
@@ -20,7 +20,11 @@ class physics {
 
 public:
 
+  physics() = default;
+
   physics(std::initializer_list<object> const &list);
+
+  void add_object(object o);
 
   void time_step(float dt);
 

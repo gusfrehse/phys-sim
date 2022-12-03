@@ -5,10 +5,15 @@ Tutorial](https://vulkan-tutorial.com).
 
 ## Building
 ### Linux
-Install dependencies: Premake5, GLM, SDL2 and Vulkan SDK.
+Install the dependencies: Premake5, GLM, SDL2 and Vulkan SDK.
 
-`$ premake5 gmake`
-`$ ./make_shaders.sh`
-`$ make`
 
-`./build/bin/Release/project`
+Then in the shell, do
+
+    $ premake5 gmake
+    $ ./make_shaders.sh
+    $ make
+    
+To run:
+    
+    $ ./build/bin/Release/project

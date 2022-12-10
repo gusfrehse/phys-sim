@@ -1,5 +1,5 @@
 # phys-sim
-![A gif video of the application running](./images/physsim.gif)
+![A gif video of the application running](./images/physim.gif)
 A physics simulator in vulkan. Base engine based mostly from [Vulkan
 Tutorial](https://vulkan-tutorial.com).
 

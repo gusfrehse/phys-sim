@@ -19,6 +19,10 @@ void physics::add_object(object o) {
   m_collisions.resize(size * size);
 }
 
+float& physics::get_time_scale() {
+  return m_time_scale;
+}
+
 void physics::time_step(float dt) {
   PROFILE_FUNC();
 
@@ -26,8 +30,8 @@ void physics::time_step(float dt) {
 
   for (auto& obj : m_objects) {
     obj.force    += m_gravity * obj.mass;
-    obj.velocity += obj.force / obj.mass * dt;
-    obj.position += obj.velocity * dt;
+    obj.velocity += obj.force / obj.mass * dt * m_time_scale;
+    obj.position += obj.velocity * dt * m_time_scale;
 
     obj.force = glm::vec3(0.0f);
 

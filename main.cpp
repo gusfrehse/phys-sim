@@ -19,7 +19,7 @@
 #include "physics.hpp"
 #include "profiler.hpp"
 
-const uint32_t NUM_OBJECTS = 10000;
+const uint32_t NUM_OBJECTS = 1000;
 
 const float physics_refresh_rate = 1.0f / 60.0f;
 
@@ -112,6 +112,35 @@ void show_frame_time(SDL_Window *w,
   SDL_SetWindowTitle(w, ss.str().c_str());
 }
 
+void gen_objects(physics& phys) {
+  std::random_device rd;
+
+  std::mt19937 e2(rd());
+
+  std::uniform_real_distribution<> dist(50.0f, 100.0f);
+
+  float phi = (1.0 + sqrt(5.0)) / 2.0;
+
+  float r = 6.0 * dist(e2) / 1.0f;
+
+  for (int i = 0; i < NUM_OBJECTS; i++) {
+    auto pos = glm::vec3((r + i * 0.4) * cos(phi * i * 0.4), (r + i * 0.4) * sin(phi * i * 0.4), -1.0f);
+    auto vel = -pos / dist(e2);
+    vel.z = 0.0f;
+
+    std::printf("Adding object at %g, %g, %g with velocity %g, %g, %g\n",
+                pos.x, pos.y, pos.z,
+                vel.x, vel.y, vel.z);
+
+    phys.add_object(object {
+                      pos,
+                      vel,
+                      1.0f,
+                      10.0f
+                    });
+  }
+}
+
 int main(int argc, char **argv) {
   PROFILE_FUNC();
 
@@ -121,35 +150,7 @@ int main(int argc, char **argv) {
 
   physics phys;
 
-
-  {
-    std::random_device rd;
-
-    std::mt19937 e2(rd());
-
-    std::uniform_real_distribution<> dist(50.0f, 100.0f);
-
-    float phi = (1.0 + sqrt(5.0)) / 2.0;
-
-    float r = 6.0 * dist(e2) / 1.0f;
-
-    for (int i = 0; i < NUM_OBJECTS; i++) {
-      auto pos = glm::vec3((r + i * 0.4) * cos(phi * i * 0.4), (r + i * 0.4) * sin(phi * i * 0.4), -1.0f);
-      auto vel = -pos / dist(e2);
-      vel.z = 0.0f;
-
-      std::printf("Adding object at %g, %g, %g with velocity %g, %g, %g\n",
-                  pos.x, pos.y, pos.z,
-                  vel.x, vel.y, vel.z);
-
-      phys.add_object(object {
-                        pos,
-                        vel,
-                        1.0f,
-                        10.0f
-                      });
-    }
-  }
+  gen_objects(phys);
 
   float aspect_ratio = render.get_width() / (float) render.get_height();
 
@@ -235,12 +236,22 @@ int main(int argc, char **argv) {
       velocity += glm::vec3(1.0f,  0.0f,  0.0f);
     }
 
-    if (keys[SDLK_j]) {
-      velocity += glm::vec3(0.0f,  0.0f,  0.1f);
+    if (keys[SDLK_t]) {
+      phys.time_step(dt * 0.1);
+      int num_collisions = phys.check_collisions();
+      auto collisions = phys.get_collisions();
+
+      apply_collisions(phys, collisions, num_collisions);
     }
 
-    if (keys[SDLK_k]) {
-      velocity += glm::vec3(0.0f,  0.0f, -0.1f);
+    if (keys[SDLK_LEFTBRACKET]) {
+      auto& time_scale = phys.get_time_scale();
+      time_scale -= 0.001f * dt;
+    }
+
+    if (keys[SDLK_RIGHTBRACKET]) {
+      auto& time_scale = phys.get_time_scale();
+      time_scale += 0.001f * dt;
     }
 
     if (keys[SDLK_LSHIFT]) {

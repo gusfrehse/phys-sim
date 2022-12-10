@@ -15,6 +15,7 @@ struct collision_response {
 class physics {
   //const glm::vec3 m_gravity = glm::vec3(0.0f, -98e-8f, 0.0f);
   const glm::vec3 m_gravity = glm::vec3(0.0f);
+  float m_time_scale = 1.0f;
   std::vector<object> m_objects;
   std::vector<collision_response> m_collisions;
 
@@ -27,6 +28,8 @@ public:
   void add_object(object o);
 
   void time_step(float dt);
+
+  float& get_time_scale();
 
   int check_collisions();
 
